@@ -8,6 +8,7 @@ const COLORS = {
 };
 
 const svg = document.getElementById('canvas');
+const scrollG = document.getElementById('scroll-g');
 const inkLayer = document.getElementById('ink-layer');
 const hlLayer = document.getElementById('hl-layer');
 const notesLayer = document.getElementById('notes');
@@ -16,9 +17,18 @@ const toolbar = document.getElementById('toolbar');
 let mode = 'view';        // view | draw
 let tool = 'pen';         // pen | arrow | hl | note | eraser
 let color = 'red';
-let items = [];           // 所有标注对象(可序列化)
+let items = [];           // 所有标注对象(可序列化,y 为"内容坐标"= 滚动=0 时的窗口坐标)
 let undoStack = [];
 let nextId = 1;
+let scrollY = 0;          // 当前跟随滚动的累计位移(像素)
+
+// 屏幕纵坐标 -> 内容纵坐标:存进标注里的 y 都加上当前滚动量,这样滚动时整体平移一致
+const cy = (clientY) => clientY + scrollY;
+
+function applyScroll() {
+  scrollG.setAttribute('transform', `translate(0 ${-scrollY})`);
+  notesLayer.style.transform = `translateY(${-scrollY}px)`;
+}
 
 /* ---------- 手绘感渲染 ---------- */
 
@@ -195,8 +205,16 @@ function bindNote(div, item) {
 function editNote(div, item) {
   div.classList.add('editing');
   div.contentEditable = 'true';
-  div.focus();
-  document.execCommand('selectAll', false, null);
+  // 窗口刚拿到焦点时直接 focus 偶尔不生效,下一帧再抓一次并把光标放到末尾
+  requestAnimationFrame(() => {
+    div.focus();
+    const r = document.createRange();
+    r.selectNodeContents(div);
+    r.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  });
   const finish = () => {
     div.contentEditable = 'false';
     div.classList.remove('editing');
@@ -206,7 +224,10 @@ function editNote(div, item) {
   };
   div.addEventListener('blur', finish, { once: true });
   div.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); div.blur(); }
+    // Esc 或 Ctrl+Enter 结束输入;单独回车换行
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault(); e.stopPropagation(); div.blur();
+    }
   });
 }
 
@@ -216,7 +237,7 @@ let drawing = null; // 进行中的笔画
 
 svg.addEventListener('mousedown', (e) => {
   if (mode !== 'draw' || e.button !== 0) return;
-  const x = e.clientX, y = e.clientY;
+  const x = e.clientX, y = cy(e.clientY);
 
   if (tool === 'eraser') {
     const t = e.target.closest('[data-id]');
@@ -243,10 +264,10 @@ svg.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mousemove', (e) => {
   if (!drawing) return;
-  const x = e.clientX, y = e.clientY;
+  const x = e.clientX, y = cy(e.clientY);
   if (drawing.type === 'eraser') {
     if (e.buttons & 1) {
-      const t = document.elementFromPoint(x, y);
+      const t = document.elementFromPoint(e.clientX, e.clientY); // 命中检测要用屏幕坐标
       const hit = t && t.closest && t.closest('[data-id]');
       if (hit) deleteItem(hit.dataset.id);
     }
@@ -286,11 +307,15 @@ window.addEventListener('keydown', (e) => {
 
 /* ---------- 工具条 ---------- */
 
+const CURSORS = { note: 'text', eraser: 'cell' };
+function selectTool(name) {
+  tool = name;
+  toolbar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+  svg.style.cursor = CURSORS[name] || 'crosshair';
+  document.body.classList.toggle('tool-note', name === 'note');
+}
 toolbar.querySelectorAll('[data-tool]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    tool = btn.dataset.tool;
-    toolbar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b === btn));
-  });
+  btn.addEventListener('click', () => selectTool(btn.dataset.tool));
 });
 
 const colorsBox = document.getElementById('colors');
@@ -323,13 +348,22 @@ ipcRenderer.on('init', (e, data) => {
   items = data.items || [];
   nextId = items.reduce((m, it) => Math.max(m, Number(it.id) || 0), 0) + 1;
   document.getElementById('app-name').textContent = data.appName || '';
+  scrollY = 0;
+  applyScroll();
   renderAll();
 });
 
 ipcRenderer.on('mode', (e, m) => {
   mode = m;
-  document.body.className = m + (items.length ? ' has-items' : '');
+  document.body.className = m + (items.length ? ' has-items' : '') + (tool === 'note' ? ' tool-note' : '');
   if (m === 'view' && drawing) drawing = null;
+});
+
+// 跟随滚动:主进程把系统滚轮换算成像素平移,查看模式下整体移动标注
+ipcRenderer.on('scroll', (e, dy) => {
+  if (mode !== 'view' || !dy) return;
+  scrollY += dy;
+  applyScroll();
 });
 
 // 查看模式:整窗穿透,但悬停到 ✎ 小按钮时临时接住鼠标
