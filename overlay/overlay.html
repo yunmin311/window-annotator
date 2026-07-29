@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="overlay.css">
+</head>
+<body class="view">
+  <svg id="canvas">
+    <g id="hl-layer"></g>
+    <g id="ink-layer"></g>
+  </svg>
+  <div id="notes"></div>
+  <div id="frame"></div>
+
+  <!-- 查看模式下的小入口:悬停可点,进入标注 -->
+  <button id="chip" class="hoverable" title="标注这个窗口 (Ctrl+Alt+A)">✎</button>
+
+  <!-- 标注模式工具条 -->
+  <div id="toolbar" class="hoverable">
+    <span id="app-name"></span>
+    <span class="sep"></span>
+    <button class="tool active" data-tool="pen"    title="画笔">✏️</button>
+    <button class="tool" data-tool="arrow"  title="箭头">↗</button>
+    <button class="tool" data-tool="hl"     title="荧光笔">▆</button>
+    <button class="tool" data-tool="note"   title="手写便签">Aa</button>
+    <button class="tool" data-tool="eraser" title="橡皮(点谁擦谁)">⌫</button>
+    <span class="sep"></span>
+    <span id="colors"></span>
+    <span class="sep"></span>
+    <button id="undo"  title="撤销 (Ctrl+Z)">↶</button>
+    <button id="clear" title="清空本窗口标注">🗑</button>
+    <button id="done"  title="完成,回到正常使用 (Esc)">完成</button>
+  </div>
+
+<script src="overlay.js"></script>
+</body>
+</html>
