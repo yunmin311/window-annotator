@@ -64,6 +64,20 @@ app.whenReady().then(async () => {
   const itemCount = await wc.executeJavaScript('items.length');
   check('画出 2 个标注对象 (实际 ' + itemCount + ')', itemCount === 2);
 
+  // 手写便签:选文字工具 -> 点一下进入编辑 -> 输入 -> 失焦保存
+  await wc.executeJavaScript(`document.querySelector('[data-tool="note"]').click()`);
+  await sleep(80);
+  send('mouseDown', 300, 300); send('mouseUp', 300, 300);
+  await sleep(120);
+  const noteState = await wc.executeJavaScript(`(() => {
+    const d = document.querySelector('.note.editing');
+    if (!d) return { ok: false };
+    d.innerText = '测试便签'; d.blur();
+    return { ok: true, count: items.length, text: (items.find(i => i.type === 'note') || {}).text };
+  })()`);
+  check('手写便签可创建并输入文字 (' + JSON.stringify(noteState) + ')',
+    noteState.ok && noteState.count === 3 && noteState.text === '测试便签');
+
   // 移动+缩放目标窗口,覆盖层应跟上(容差 DWM 不可见边框)
   target.setBounds({ x: 340, y: 260, width: 780, height: 560 });
   await sleep(600);
@@ -86,13 +100,22 @@ app.whenReady().then(async () => {
   await sleep(600);
   check('目标恢复后覆盖层重现', o.visible === true);
 
+  // 跟随滚动:查看模式下给一个滚动量,标注整体平移(scrollY=-60 -> 图层 translate 60)
+  main.setDrawMode(o, false);
+  await sleep(150);
+  o.win.webContents.send('scroll', -60);
+  await sleep(200);
+  const sc = await wc.executeJavaScript('scrollY');
+  const tf = await wc.executeJavaScript(`document.getElementById('scroll-g').getAttribute('transform')`);
+  check(`跟随滚动平移 (scrollY=${sc}, transform=${tf})`, sc === -60 && /translate\(0 60\)/.test(tf || ''));
+
   // 存档落盘
   const dataFile = path.join(__dirname, '..', 'data', 'annotations.json');
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(dataFile, 'utf8')); } catch {}
   const key = Object.keys(saved).find((k) => k.includes('AnnotateTestTarget')) ||
-              Object.keys(saved).find((k) => (saved[k] || []).length === 2);
-  check('标注已存档 data/annotations.json', !!key && saved[key].length === 2);
+              Object.keys(saved).find((k) => (saved[k] || []).length === 3);
+  check('标注已存档 data/annotations.json', !!key && saved[key].length === 3);
 
   // 截图覆盖层(透明底,只有笔迹和工具条)
   const img = await wc.capturePage();

@@ -23,8 +23,11 @@ body.draw #canvas [data-id]:hover { filter: drop-shadow(0 0 2px rgba(0,0,0,.45))
 }
 body.draw .note { pointer-events: auto; cursor: grab; }
 body.draw .note:hover { background: rgba(255,255,255,.35); }
-.note.editing { cursor: text; background: rgba(255,255,255,.6) !important;
-  box-shadow: 0 2px 10px rgba(0,0,0,.18); text-shadow: none; }
+.note.editing { cursor: text; background: rgba(255,255,255,.72) !important;
+  min-width: 96px; min-height: 1.3em; caret-color: currentColor;
+  box-shadow: 0 2px 12px rgba(0,0,0,.22); outline: 1.5px dashed currentColor; outline-offset: 2px;
+  text-shadow: none; }
+.note.editing:empty::before { content: '输入文字…'; opacity: .4; }
 
 /* 标注模式的窗口描边提示 */
 #frame { position: fixed; inset: 3px; border-radius: 6px; pointer-events: none;

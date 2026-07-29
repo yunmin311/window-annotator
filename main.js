@@ -6,6 +6,10 @@ const path = require('path');
 const fs = require('fs');
 const win32 = require('./src/win32');
 const store = require('./src/store');
+const settings = require('./src/settings');
+
+// 滚轮一格(WHEEL_DELTA=120)平移多少像素——不同软件滚动步长不同,给三档可调
+let scrollPxPerNotch = settings.get('scrollPxPerNotch', 100);
 
 // key = 目标窗口 hwnd 字符串 -> { win, overlayHwnd, target, storeKey, drawMode, visible, lastBounds }
 const overlays = new Map();
@@ -96,10 +100,11 @@ function toggleAnnotate() {
   createOverlay(fg, info);
 }
 
-// 追踪循环:跟随移动/缩放,目标最小化或失去前台就藏起来
+// 追踪循环:跟随移动/缩放,目标最小化或失去前台就藏起来;查看模式下把滚轮换算成标注平移
 function tick() {
   if (!overlays.size) return;
   const fg = win32.getForegroundWindow();
+  const wheel = win32.takeWheel(); // 系统级累积的滚轮增量(单位 120/格)
   for (const [key, o] of overlays) {
     const state = win32.getWindowState(o.target);
     if (!state) { // 目标窗口关闭
@@ -112,6 +117,10 @@ function tick() {
     if (shouldShow) {
       applyBounds(o, state.rect);
       if (!o.visible) { o.win.showInactive(); o.visible = true; }
+      // 只在查看模式、且滚的正是这个目标窗口时,跟随滚动平移标注
+      if (wheel && !o.drawMode && win32.same(fg, o.target)) {
+        o.win.webContents.send('scroll', -(wheel / 120) * scrollPxPerNotch);
+      }
     } else {
       if (o.drawMode && !win32.same(fg, o.overlayHwnd)) setDrawMode(o, false);
       if (o.visible) { o.win.hide(); o.visible = false; }
@@ -143,18 +152,44 @@ function registerHotkey(candidates, fn) {
   return null;
 }
 
+// 开机自启:交给系统的登录项(注册表 Run 键),自己不用记状态
+function isAutoStart() {
+  try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
+}
+function setAutoStart(on) {
+  app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: [path.resolve(__dirname)] });
+}
+
 let tray = null;
-function createTray(annotateKey, quitKey) {
-  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
-  tray = new Tray(icon);
-  tray.setToolTip(`Window Annotator — 标注:${annotateKey || '快捷键注册失败'}`);
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `标注当前窗口:${annotateKey || '全部组合被占用'}`, enabled: false },
-    { label: `退出程序:${quitKey || '—'}`, enabled: false },
+let trayKeys = { annotateKey: null, quitKey: null };
+
+function buildTrayMenu() {
+  const { annotateKey, quitKey } = trayKeys;
+  const scrollItem = (label, px) => ({
+    label, type: 'radio', checked: scrollPxPerNotch === px,
+    click: () => { scrollPxPerNotch = px; settings.set('scrollPxPerNotch', px); },
+  });
+  return Menu.buildFromTemplate([
+    { label: `标注当前窗口:${annotateKey ? annotateKey.replace(/Control/g, 'Ctrl') : '全部组合被占用'}`, enabled: false },
+    { label: `退出程序:${quitKey ? quitKey.replace(/Control/g, 'Ctrl') : '—'}`, enabled: false },
+    { type: 'separator' },
+    { label: '开机自动启动', type: 'checkbox', checked: isAutoStart(),
+      click: (mi) => { setAutoStart(mi.checked); } },
+    { label: '滚动跟随灵敏度', submenu: [
+      scrollItem('慢', 60), scrollItem('正常', 100), scrollItem('快', 140),
+    ] },
     { type: 'separator' },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
     { label: '退出', click: () => app.quit() },
-  ]));
+  ]);
+}
+
+function createTray(annotateKey, quitKey) {
+  trayKeys = { annotateKey, quitKey };
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
+  tray = new Tray(icon);
+  tray.setToolTip(`Window Annotator — 标注:${annotateKey ? annotateKey.replace(/Control/g, 'Ctrl') : '快捷键注册失败'}`);
+  tray.setContextMenu(buildTrayMenu());
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -178,13 +213,15 @@ if (!app.requestSingleInstanceLock()) {
     else if (annotateKey !== 'Control+Alt+A') body = `Ctrl+Alt+A 被其他软件占用(常见是 QQ 截图),已改用 ${annotateKey.replace(/Control/g, 'Ctrl')}`;
     else body = '把标注贴到当前窗口:Ctrl+Alt+A;退出:Ctrl+Alt+Q';
     new Notification({ title: 'Window Annotator 正在后台运行', body }).show();
-    console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'}`);
+
+    const hookOk = win32.installWheelHook();
+    console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'} 滚轮钩子=${hookOk ? 'OK' : '失败'}`);
 
     setInterval(tick, 16);
   });
 }
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => { globalShortcut.unregisterAll(); win32.uninstallWheelHook(); });
 app.on('window-all-closed', () => {}); // 没有覆盖层时也保持后台驻留
 
 module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays };

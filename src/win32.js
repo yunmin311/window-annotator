@@ -70,4 +70,49 @@ function setForegroundWindow(hwnd) {
   return SetForegroundWindow(hwnd);
 }
 
-module.exports = { getForegroundWindow, getWindowState, getWindowInfo, setForegroundWindow, hkey, same };
+/* ---------- 全局滚轮钩子 ----------
+   外挂浮层读不到目标软件内部的滚动位置,所以用 WH_MOUSE_LL 低级鼠标钩子在系统层
+   截下滚轮增量(WHEEL_DELTA=120/格),累加起来给主进程按帧取用,换算成像素平移标注。*/
+const GetModuleHandleW = kernel32.func('int64 GetModuleHandleW(void *name)');
+const SetWindowsHookExW = user32.func('int64 SetWindowsHookExW(int idHook, void *fn, int64 hmod, uint32 threadId)');
+const CallNextHookEx = user32.func('int64 CallNextHookEx(int64 hhk, int nCode, uint64 wParam, int64 lParam)');
+const UnhookWindowsHookEx = user32.func('bool UnhookWindowsHookEx(int64 hhk)');
+// MSLLHOOKSTRUCT: pt(2×long) + mouseData(滚轮高16位有符号) + flags + time + extra
+const MSLLHOOKSTRUCT = koffi.struct('MSLLHOOKSTRUCT', {
+  x: 'long', y: 'long', mouseData: 'int32', flags: 'uint32', time: 'uint32', extra: 'uint64',
+});
+const MouseProc = koffi.proto('int64 __stdcall MouseProc(int nCode, uint64 wParam, int64 lParam)');
+
+let hookHandle = 0;
+let wheelAccum = 0; // 累积滚轮增量(单位 WHEEL_DELTA)
+let hookCb = null;
+
+function installWheelHook() {
+  if (hookHandle) return true;
+  hookCb = koffi.register((nCode, wParam, lParam) => {
+    try {
+      if (nCode >= 0 && Number(wParam) === 0x020A /* WM_MOUSEWHEEL */) {
+        const info = koffi.decode(lParam, MSLLHOOKSTRUCT);
+        wheelAccum += (info.mouseData >> 16); // 向上滚为正,向下滚为负
+      }
+    } catch { /* 钩子回调必须永不抛错 */ }
+    return CallNextHookEx(0, nCode, wParam, lParam);
+  }, koffi.pointer(MouseProc));
+  hookHandle = SetWindowsHookExW(14 /* WH_MOUSE_LL */, hookCb, GetModuleHandleW(null), 0);
+  return BigInt(hookHandle) !== 0n;
+}
+
+function takeWheel() {
+  const v = wheelAccum;
+  wheelAccum = 0;
+  return v;
+}
+
+function uninstallWheelHook() {
+  if (hookHandle) { UnhookWindowsHookEx(hookHandle); hookHandle = 0; }
+}
+
+module.exports = {
+  getForegroundWindow, getWindowState, getWindowInfo, setForegroundWindow, hkey, same,
+  installWheelHook, takeWheel, uninstallWheelHook,
+};
