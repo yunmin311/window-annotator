@@ -1,8 +1,9 @@
 // Integration test for "follow page scroll": a REAL tall scrollable window -> UIA reader reads its
-// real scroll -> the annotation on the overlay actually moves. This exercises the whole chain end to end
-// (reader + main.applyScrollFollow + overlay scroll-to), which the unit checks only cover in pieces.
-// Run: electron test/e2e-scroll.js
+// real scroll -> the annotation on the overlay actually moves. Exercises the whole chain end to end
+// (reader multi-region -> main.computeRegions -> overlay per-region follow), which the unit/DOM checks
+// only cover in pieces. Single-region case (one tall page => one region). Run: electron test/e2e-scroll.js
 'use strict';
+process.env.WA_TEST = '1'; // 放行单实例锁,便于开着正式版时也能跑
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -61,17 +62,29 @@ app.whenReady().then(async () => {
   const r1 = scrollUia.get(thwnd);
   check(`UIA reads target scroll (percent=${r1 && r1.percent}, viewsize=${r1 && r1.viewsize}, vpPx=${r1 && r1.viewportPx})`,
     !!r1 && r1.viewsize > 0.1 && r1.viewsize < 99 && r1.percent >= 0 && r1.viewportPx > 0);
+  const regs1 = scrollUia.getRegions(thwnd);
+  check(`UIA reports region(s) (n=${regs1 && regs1.length})`, !!regs1 && regs1.length > 0);
 
-  const y0 = await wc.executeJavaScript('targetScrollY');
+  // 读被画出的那一笔当前的平移量(它所在区的 dy),和主进程发来的最大区位移
+  const annoDy = () => wc.executeJavaScript(`(() => {
+    const el = document.querySelector('#ink-layer path'); if (!el) return null;
+    const m = (el.getAttribute('transform') || '').match(/translate\\(0 (-?[0-9.]+)\\)/);
+    return m ? parseFloat(m[1]) : 0;
+  })()`);
+  const maxOff = () => wc.executeJavaScript('(typeof liveRegions!=="undefined"&&liveRegions.length)?Math.max.apply(null,liveRegions.map(function(r){return r.off;})):0');
+
+  const dy0 = await annoDy();
 
   await target.webContents.executeJavaScript('window.scrollTo(0, 3000)');
   await sleep(1600);       // reader poll (45ms) + main tick + easing settle
 
   const r2 = scrollUia.get(thwnd);
-  const y1 = await wc.executeJavaScript('targetScrollY');
-  logf(`after scrollTo(3000): percent ${r1 && r1.percent} -> ${r2 && r2.percent}; annotation targetScrollY ${y0} -> ${y1}`);
+  const dy1 = await annoDy();
+  const off1 = await maxOff();
+  logf(`after scrollTo(3000): percent ${r1 && r1.percent} -> ${r2 && r2.percent}; region off -> ${off1}; annotation dy ${dy0} -> ${dy1}`);
   check('reader saw the scroll (percent grew)', !!r2 && r2.percent > 5);
-  check('annotation followed the scroll (targetScrollY moved a lot)', Math.abs(y1 - y0) > 100);
+  check('a region reports a large scroll offset', off1 > 100);
+  check('annotation followed its region (transform dy moved a lot)', dy0 != null && dy1 != null && Math.abs(dy1 - dy0) > 100);
 
   const bind = await wc.executeJavaScript('window.__lastBind');
   logf('overlay bind-state = ' + bind);

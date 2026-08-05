@@ -1,6 +1,7 @@
 // 标注画布:手绘风渲染 + 工具交互。坐标全部相对窗口左上角,覆盖层跟着窗口走,标注自然跟着走。
 'use strict';
 const { ipcRenderer } = require('electron');
+const geo = require('../src/regions'); // 多区跟随:落笔点归哪块区、几何判定(纯逻辑,与主进程共用同一套)
 
 const COLORS = {
   neutral: '#3d3d40', red: '#e5484d', amber: '#ee9d2b',
@@ -19,34 +20,108 @@ const bindBadge = document.getElementById('bind-badge');
 let mode = 'view';        // view | draw
 let tool = 'pen';         // pen | arrow | rect | hl | note | eraser
 let color = 'red';
-let items = [];           // 所有标注对象(可序列化,y 为"内容坐标"= 滚动=0 时的窗口坐标)
+let items = [];           // 标注对象:坐标=画下那刻的窗口本地坐标;roff0=落笔所在滚动区当时的位移(跟随基准)
 let undoStack = [];
 let nextId = 1;
-let scrollY = 0;          // 当前渲染的滚动位移(像素,缓动逼近 targetScrollY)
-let targetScrollY = 0;    // 滚轮累计到的目标位移
-let scrollRAF = null;
 
-// 屏幕纵坐标 -> 内容纵坐标:存进标注里的 y 都加上当前滚动量,这样滚动时整体平移一致
-const cy = (clientY) => clientY + scrollY;
+// 多区跟随:主进程每帧发来当前所有可滚动区 [{key, rect{x,y,w,h}, off}](浮层本地 DIP)。
+// 每条标注按"落笔点落在哪块区"归属,渲染时按那块区(缓动后)的位移整体上移;不在任何区就钉在窗口上。
+let liveRegions = [];
+const easedOff = new Map(); // key -> 缓动后的位移,每帧向目标 off 逼近,把 45ms 一跳抹顺
+let regionRAF = null;
+const elCache = new Map();   // item.id -> 渲染出的元素(缓存,免每帧 querySelector;绝不挂到 items 上,否则 IPC/存档序列化会炸)
+const bboxCache = new Map(); // item.id -> 包围盒(缓存,免每帧 getBBox 触发重排)
+const cy = (clientY) => clientY; // 坐标存窗口本地(不再叠加滚动),跟随交给每条标注各自的区位移
 
-function applyScroll() {
-  scrollG.setAttribute('transform', `translate(0 ${-scrollY})`);
-  notesLayer.style.transform = `translateY(${-scrollY}px)`;
+// 一条标注的锚点(窗口本地):笔迹取首点,箭头/方框/荧光取起点,便签取左上角
+function anchorOf(it) {
+  if (it.type === 'note') return [it.x, it.y];
+  if (it.from) return it.from;
+  if (it.points && it.points.length) return it.points[0];
+  return [0, 0];
 }
-
-// 快速缓动:每帧把 scrollY 拉近 targetScrollY 的 35%,把滚轮的"一格一跳"抹成顺滑滑动
-function easeScroll() {
-  const d = targetScrollY - scrollY;
-  if (Math.abs(d) < 0.5) { scrollY = targetScrollY; applyScroll(); scrollRAF = null; return; }
-  scrollY += d * 0.35;
-  applyScroll();
-  scrollRAF = requestAnimationFrame(easeScroll);
+// (x,y) 落在哪块区的当前位移(落笔基准);不在任何区返回 null
+function roffAt(x, y) {
+  const key = geo.pickRegion(liveRegions, x, y);
+  const r = key && liveRegions.find((rr) => rr.key === key);
+  return r ? r.off : null;
 }
-
-function snapScroll() { // 立即吸附到目标位置(进画笔模式/初始化时,避免坐标错位)
-  if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
-  scrollY = targetScrollY;
-  applyScroll();
+// 这条标注归属哪块区:有绑定基准(roff0 是数)且落笔点落在某区。没有则 null(钉窗口)。
+function regionFor(it) {
+  if (typeof it.roff0 !== 'number') return null;
+  const a = anchorOf(it);
+  const key = geo.pickRegion(liveRegions, a[0], a[1]);
+  return key ? liveRegions.find((r) => r.key === key) : null;
+}
+// 该整体上移多少(DIP):所在区缓动位移 - 落笔基准;没区=0(钉窗口)
+function dyOf(it, reg) {
+  reg = reg || regionFor(it);
+  if (!reg) return 0;
+  const eased = easedOff.has(reg.key) ? easedOff.get(reg.key) : reg.off;
+  return -(eased - it.roff0);
+}
+// 这条标注在它自己坐标系里的包围盒(算一次缓存;跟随时它不变,不必每帧 getBBox 触发重排)
+function bboxOf(it) {
+  if (bboxCache.has(it.id)) return bboxCache.get(it.id);
+  const el = elCache.get(it.id); if (!el) return null;
+  let b;
+  if (it.type === 'note') b = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+  else { try { const g = el.getBBox(); b = { x: g.x, y: g.y, w: g.width, h: g.height }; } catch { b = null; } }
+  if (!b || (b.w === 0 && b.h === 0)) return null; // 还没排版好,先别缓存,下帧再试
+  bboxCache.set(it.id, b);
+  return b;
+}
+// 这条标注(按当前 dy 平移后)是不是整个滚出了它所在区的范围 —— 是就该藏起来,别飘到区外
+function outsideRegion(it, dy, reg) {
+  const b = bboxOf(it);
+  if (!b) return false;
+  return geo.outside(b.x, b.y + dy, b.w, b.h, reg.rect);
+}
+// 延迟绑定:画笔模式下浮层在前台、读不到目标滚动区,落笔当下没法定基准。回到查看、区读到了,就把还没
+// 绑定的标注按落笔点归到所在区,基准取该区当前位移(此刻目标滚动位置≈落笔时,不会错位)。也让存档重载后按
+// 几何自动重绑,不依赖易变的区 key。
+function bindPending() {
+  for (const it of items) {
+    if (typeof it.roff0 === 'number') continue;
+    const a = anchorOf(it);
+    const key = geo.pickRegion(liveRegions, a[0], a[1]);
+    if (!key) continue;
+    const r = liveRegions.find((rr) => rr.key === key);
+    if (r) it.roff0 = r.off;
+  }
+}
+// 把每条标注按其所在区的位移平移到位:paths 各设 transform,便签设 translateY 叠加自身 rotate
+function applyRegions() {
+  bindPending();
+  for (const it of items) {
+    const el = elCache.get(it.id); // 缓存的元素引用,不再每帧 querySelector
+    if (!el) continue;
+    const reg = regionFor(it);
+    const dy = dyOf(it, reg);
+    if (it.type === 'note') el.style.transform = `translateY(${dy}px) rotate(${it.rot}deg)`;
+    else el.setAttribute('transform', `translate(0 ${dy})`);
+    // 裁剪:标注跟随其区滚出该区范围就隐藏(否则会"越级"飘到浏览器标签栏等区外)。
+    // 用 visibility 不用 display:none —— 后者会让包围盒归零,下一帧误判"在区内"又闪回来。
+    el.style.visibility = (reg && outsideRegion(it, dy, reg)) ? 'hidden' : '';
+  }
+}
+// 每帧把每块区的 easedOff 向目标 off 逼近(0.35),把 45ms 一跳抹顺;都到位就停
+function easeRegions() {
+  let moving = false;
+  for (const r of liveRegions) {
+    const cur = easedOff.has(r.key) ? easedOff.get(r.key) : r.off;
+    const d = r.off - cur;
+    if (Math.abs(d) < 0.5) easedOff.set(r.key, r.off);
+    else { easedOff.set(r.key, cur + d * 0.35); moving = true; }
+  }
+  applyRegions();
+  regionRAF = moving ? requestAnimationFrame(easeRegions) : null;
+}
+// 立即吸附(进画笔模式/初始化,免坐标错位)
+function snapRegions() {
+  if (regionRAF) { cancelAnimationFrame(regionRAF); regionRAF = null; }
+  for (const r of liveRegions) easedOff.set(r.key, r.off);
+  applyRegions();
 }
 
 /* ---------- 手绘感渲染 ---------- */
@@ -163,18 +238,24 @@ function makeNote(item) {
 }
 
 function renderItem(item) {
-  if (item.type === 'note') notesLayer.appendChild(makeNote(item));
-  else (item.type === 'hl' ? hlLayer : inkLayer).appendChild(makePath(item));
+  let el;
+  if (item.type === 'note') { el = makeNote(item); notesLayer.appendChild(el); }
+  else { el = makePath(item); (item.type === 'hl' ? hlLayer : inkLayer).appendChild(el); }
+  elCache.set(item.id, el);   // 缓存元素(单独 Map,不进 items)
+  bboxCache.delete(item.id);  // 包围盒待用时惰性算一次
 }
 
 function renderAll() {
   inkLayer.innerHTML = ''; hlLayer.innerHTML = ''; notesLayer.innerHTML = '';
+  elCache.clear(); bboxCache.clear();
   items.forEach(renderItem);
+  applyRegions(); // 渲染完按各自区位移就位(初次/重画时对齐)
   document.body.classList.toggle('has-items', items.length > 0);
 }
 
 function removeDom(id) {
   document.querySelectorAll(`[data-id="${id}"]`).forEach((el) => el.remove());
+  elCache.delete(id); bboxCache.delete(id);
 }
 
 /* ---------- 数据 ---------- */
@@ -262,7 +343,7 @@ function bindNote(div, item) {
     if (mode !== 'draw') return;
     e.preventDefault(); e.stopPropagation();
     const s = Math.max(10, Math.min(80, (item.size || 19) + (e.deltaY < 0 ? 2 : -2)));
-    item.size = s; div.style.fontSize = s + 'px';
+    item.size = s; div.style.fontSize = s + 'px'; bboxCache.delete(item.id); // 字号变了,包围盒重算
     selectNote(item);
     save();
   }, { passive: false });
@@ -290,7 +371,7 @@ function editNote(div, item) {
   const finish = () => {
     div.contentEditable = 'false';
     div.classList.remove('editing');
-    item.text = div.innerText.replace(/\n+$/, '');
+    item.text = div.innerText.replace(/\n+$/, ''); bboxCache.delete(item.id); // 文字变了,包围盒重算
     if (!item.text.trim()) deleteItem(item.id);
     else save();
   };
@@ -311,6 +392,7 @@ svg.addEventListener('mousedown', (e) => {
   if (mode !== 'draw' || e.button !== 0) return;
   clearNoteSelection(); // 在空白处落笔,取消便签选中
   const x = e.clientX, y = cy(e.clientY);
+  // 不在落笔当下定 roff0:画笔模式下浮层在前台、读不到目标滚动区。回到查看模式由 bindPending 延迟绑定。
 
   if (tool === 'eraser') {
     const t = e.target.closest('[data-id]');
@@ -464,8 +546,7 @@ ipcRenderer.on('init', (e, data) => {
   items = data.items || [];
   nextId = items.reduce((m, it) => Math.max(m, Number(it.id) || 0), 0) + 1;
   document.getElementById('app-name').textContent = data.appName || '';
-  scrollY = 0; targetScrollY = 0;
-  snapScroll();
+  liveRegions = []; easedOff.clear();
   renderAll();
 });
 
@@ -476,17 +557,18 @@ ipcRenderer.on('mode', (e, m) => {
   if (m === 'view') clearNoteSelection();
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
   if (m === 'draw') {
-    snapScroll(); // 进画笔模式先把缓动吸附到位,画笔坐标才不会错位
+    snapRegions(); // 进画笔模式先把缓动吸附到位,画笔坐标才不会错位
     requestAnimationFrame(() => placeInk(false)); // 工具条已显示,把高亮胶囊瞬间摆到当前工具下
   }
 });
 
-// 跟随滚动(绝对定位):主进程按 UIA 读到的真实滚动百分比给出目标位移,查看模式缓动平移过去。
-// 绝对量而非累加增量 —— 自我校正、不漂移;读不到时主进程根本不发,标注保持钉在窗口上。
-ipcRenderer.on('scroll-to', (e, y) => {
+// 多区跟随:主进程每帧发来当前所有可滚动区(浮层本地 DIP + 各自内容位移),查看模式下每条标注
+// 按它落笔所在那块区缓动平移。绝对量、自我校正、不漂移;读不到时主进程发空数组,标注钉在窗口上。
+ipcRenderer.on('regions', (e, list) => {
   if (mode !== 'view') return;
-  targetScrollY = y;
-  if (!scrollRAF) scrollRAF = requestAnimationFrame(easeScroll);
+  liveRegions = list || [];
+  for (const k of [...easedOff.keys()]) if (!liveRegions.some((r) => r.key === k)) easedOff.delete(k); // 清消失区的残留
+  if (!regionRAF) regionRAF = requestAnimationFrame(easeRegions);
 });
 
 // 绑定状态牌:主进程算好"跟随滚动中 / 只钉在窗口上"发过来,查看模式下短暂亮一下再淡出。

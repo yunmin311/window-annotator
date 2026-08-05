@@ -1,6 +1,7 @@
 // 端到端自测:造一个目标窗口 -> 贴覆盖层 -> 程序内模拟画笔 -> 校验跟随移动 + 存档 + 截图
 // 用法: electron test/e2e-main.js
 'use strict';
+process.env.WA_TEST = '1'; // 放行单实例锁,便于开着正式版时也能跑
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -132,17 +133,18 @@ app.whenReady().then(async () => {
   await sleep(600);
   check('目标恢复后覆盖层重现', o.visible === true);
 
-  // 跟随滚动:查看模式下给一个滚动量,标注整体平移(scrollY=-60 -> 图层 translate 60)
+  // 跟随滚动(多区):查看模式给一块覆盖全窗的区,标注按它平移。先 off=0 绑定,再 off=60 -> 标注上移 60
   main.setDrawMode(o, false);
   await sleep(150);
-  o.win.webContents.send('scroll-to', -60); // UIA 跟随:主进程发的是绝对目标位移
-  // 缓动逼近目标,轮询等它追平(rAF 后台可能被限帧)
-  let sc = 0;
-  for (let t = 0; t < 40 && sc !== -60; t++) { await sleep(30); sc = await wc.executeJavaScript('scrollY'); }
-  const tgt = await wc.executeJavaScript('targetScrollY');
-  const tf = await wc.executeJavaScript(`document.getElementById('scroll-g').getAttribute('transform')`);
-  check(`跟随滚动平移 (scrollY=${sc}, target=${tgt}, transform=${tf})`,
-    tgt === -60 && sc === -60 && /translate\(0 60\)/.test(tf || ''));
+  const region = (off) => [{ key: 'm', rect: { x: 0, y: 0, w: 2000, h: 2000 }, off }];
+  o.win.webContents.send('regions', region(0));
+  await sleep(120);
+  await wc.executeJavaScript('snapRegions()'); // 绑定 + 就位(躲开后台 rAF 限帧)
+  o.win.webContents.send('regions', region(60));
+  await sleep(120);
+  await wc.executeJavaScript('snapRegions()');
+  const tf = await wc.executeJavaScript(`(() => { const el = document.querySelector('#ink-layer path, #hl-layer path'); return el ? (el.getAttribute('transform') || '') : 'none'; })()`);
+  check(`跟随滚动:标注按区平移 (transform=${tf})`, /translate\(0 -60\)/.test(tf));
 
   // 存档落盘
   const dataFile = path.join(__dirname, '..', 'data', 'annotations.json');
