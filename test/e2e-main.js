@@ -9,12 +9,16 @@ const win32 = require('../src/win32');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT = process.env.E2E_OUT || __dirname;
+// 结果逐行写文件,躲开 stdout 缓冲 / 后台任务被杀导致的空输出(同 e2e-scroll 的做法)
+const RESULT = path.join(OUT, 'main-result.txt');
+try { fs.writeFileSync(RESULT, 'e2e-main start\n'); } catch {}
+const logf = (s) => { try { fs.appendFileSync(RESULT, s + '\n'); } catch {} console.log(s); };
 
-setTimeout(() => { console.log('E2E TIMEOUT'); app.exit(2); }, 40000);
+setTimeout(() => { logf('E2E TIMEOUT'); app.exit(2); }, 40000);
 
 app.whenReady().then(async () => {
   let fails = 0;
-  const check = (name, ok) => { console.log((ok ? 'PASS' : 'FAIL') + ' - ' + name); if (!ok) fails++; };
+  const check = (name, ok) => { logf((ok ? 'PASS' : 'FAIL') + ' - ' + name); if (!ok) fails++; };
 
   const target = new BrowserWindow({
     x: 200, y: 150, width: 720, height: 520,
@@ -22,6 +26,7 @@ app.whenReady().then(async () => {
   });
   await target.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
     '<body style="font-family:sans-serif;padding:48px"><h1>目标窗口</h1><p>标注应该贴在这段文字上面。</p></body>'));
+  app.focus({ steal: true }); // 强制本进程到前台:躲开 Windows 前台锁(自动化下 focus() 常被拦,窗口拿不到前台)
   target.focus();
   await sleep(1000);
 
@@ -61,8 +66,35 @@ app.whenReady().then(async () => {
   send('mouseUp', 420, 260);
   await sleep(600);
 
+  // 方框:拖一个矩形框
+  await wc.executeJavaScript(`document.querySelector('[data-tool="rect"]').click()`);
+  await sleep(80);
+  send('mouseDown', 250, 300);
+  for (let i = 0; i <= 10; i++) { send('mouseMove', 250 + i * 25, 300 + i * 12, { buttons: 1 }); await sleep(14); }
+  send('mouseUp', 500, 420);
+  await sleep(300);
+
+  // 荧光笔:用渲染进程内合成的 DOM 事件同步划一道近水平线,验证"自动拉平成直带"。
+  // (不走 sendInputEvent:那样合成事件不动物理光标,睡眠间隙里真实光标的 mousemove 会串进来污染终点)
+  const hlItem = await wc.executeJavaScript(`(() => {
+    document.querySelector('[data-tool="hl"]').click();
+    const svg = document.getElementById('canvas');
+    const fire = (el, type, x, y, b) => el.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons: b, bubbles: true }));
+    fire(svg, 'mousedown', 160, 450, 1);
+    for (let i = 1; i <= 12; i++) fire(window, 'mousemove', 160 + i * 25, 450 + Math.sin(i) * 4, 1); // 近水平抖动
+    fire(window, 'mouseup', 460, 448, 0);
+    const h = items.filter(i => i.type === 'hl').pop() || null;
+    return JSON.stringify(h && { from: h.from, to: h.to });
+  })()`);
+  await sleep(200);
+  const hl = JSON.parse(hlItem || 'null');
+
   const itemCount = await wc.executeJavaScript('items.length');
-  check('画出 2 个标注对象 (实际 ' + itemCount + ')', itemCount === 2);
+  check('画出 4 个标注对象:笔/箭头/方框/荧光 (实际 ' + itemCount + ')', itemCount === 4);
+  const kinds = await wc.executeJavaScript('items.map(i => i.type).join(",")');
+  check('含方框对象', /(^|,)rect(,|$)/.test(kinds));
+  check('荧光笔=直带且近水平自动拉平 (' + hlItem + ')',
+    !!hl && !!hl.from && !!hl.to && hl.from[1] === hl.to[1]);
 
   // 手写便签:选文字工具 -> 点一下进入编辑 -> 输入 -> 失焦保存
   await wc.executeJavaScript(`document.querySelector('[data-tool="note"]').click()`);
@@ -76,7 +108,7 @@ app.whenReady().then(async () => {
     return { ok: true, count: items.length, text: (items.find(i => i.type === 'note') || {}).text };
   })()`);
   check('手写便签可创建并输入文字 (' + JSON.stringify(noteState) + ')',
-    noteState.ok && noteState.count === 3 && noteState.text === '测试便签');
+    noteState.ok && noteState.count === 5 && noteState.text === '测试便签');
 
   // 移动+缩放目标窗口,覆盖层应跟上(容差 DWM 不可见边框)
   target.setBounds({ x: 340, y: 260, width: 780, height: 560 });
@@ -96,26 +128,29 @@ app.whenReady().then(async () => {
   target.minimize();
   await sleep(500);
   check('目标最小化后覆盖层隐藏', o.visible === false);
-  target.restore(); target.focus();
+  target.restore(); app.focus({ steal: true }); target.focus();
   await sleep(600);
   check('目标恢复后覆盖层重现', o.visible === true);
 
   // 跟随滚动:查看模式下给一个滚动量,标注整体平移(scrollY=-60 -> 图层 translate 60)
   main.setDrawMode(o, false);
   await sleep(150);
-  o.win.webContents.send('scroll', -60);
-  await sleep(200);
-  const sc = await wc.executeJavaScript('scrollY');
+  o.win.webContents.send('scroll-to', -60); // UIA 跟随:主进程发的是绝对目标位移
+  // 缓动逼近目标,轮询等它追平(rAF 后台可能被限帧)
+  let sc = 0;
+  for (let t = 0; t < 40 && sc !== -60; t++) { await sleep(30); sc = await wc.executeJavaScript('scrollY'); }
+  const tgt = await wc.executeJavaScript('targetScrollY');
   const tf = await wc.executeJavaScript(`document.getElementById('scroll-g').getAttribute('transform')`);
-  check(`跟随滚动平移 (scrollY=${sc}, transform=${tf})`, sc === -60 && /translate\(0 60\)/.test(tf || ''));
+  check(`跟随滚动平移 (scrollY=${sc}, target=${tgt}, transform=${tf})`,
+    tgt === -60 && sc === -60 && /translate\(0 60\)/.test(tf || ''));
 
   // 存档落盘
   const dataFile = path.join(__dirname, '..', 'data', 'annotations.json');
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(dataFile, 'utf8')); } catch {}
   const key = Object.keys(saved).find((k) => k.includes('AnnotateTestTarget')) ||
-              Object.keys(saved).find((k) => (saved[k] || []).length === 3);
-  check('标注已存档 data/annotations.json', !!key && saved[key].length === 3);
+              Object.keys(saved).find((k) => (saved[k] || []).length === 5);
+  check('标注已存档 data/annotations.json', !!key && saved[key].length === 5);
 
   // 截图覆盖层(透明底,只有笔迹和工具条)
   const img = await wc.capturePage();
@@ -126,6 +161,6 @@ app.whenReady().then(async () => {
   // 清理测试存档
   if (key) { delete saved[key]; fs.writeFileSync(dataFile, JSON.stringify(saved, null, 1)); }
 
-  console.log(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
+  logf(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
   app.exit(fails === 0 ? 0 : 1);
-}).catch((err) => { console.error('E2E ERROR:', err); app.exit(3); });
+}).catch((err) => { logf('E2E ERROR: ' + (err && err.stack || err)); app.exit(3); });

@@ -7,9 +7,11 @@ const fs = require('fs');
 const win32 = require('./src/win32');
 const store = require('./src/store');
 const settings = require('./src/settings');
+const scrollUia = require('./src/scroll-uia');
 
-// 滚轮一格(WHEEL_DELTA=120)平移多少像素——不同软件滚动步长不同,给三档可调
-let scrollPxPerNotch = settings.get('scrollPxPerNotch', 100);
+// 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
+// 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
+let scrollFollow = settings.get('scrollFollow', true);
 
 // key = 目标窗口 hwnd 字符串 -> { win, overlayHwnd, target, storeKey, drawMode, visible, lastBounds }
 const overlays = new Map();
@@ -41,6 +43,10 @@ function createOverlay(targetHwnd, info) {
     drawMode: false,
     visible: false,
     lastBounds: null,
+    lastPhys: null,
+    baseOffset: null,   // 进入查看模式那一刻的真实滚动偏移(DIP),之后按相对它平移
+    lastScrollSent: null,
+    bindState: null,    // 上次发给浮层的绑定状态('scroll'跟随滚动 / 'window'只钉窗口);变了才重发
   };
   overlays.set(win32.hkey(targetHwnd), o);
 
@@ -72,9 +78,46 @@ function applyBounds(o, physRect) {
   o.win.setBounds(b);
 }
 
+// 目标窗口有没有"可用的真实滚动读数":读得到、且确实可滚动(内容高于视口)才算。读不到返回 null。
+function validScroll(target) {
+  const s = scrollUia.get(target);
+  if (!s || !(s.viewsize > 0.01 && s.viewsize < 99.99) || s.percent < 0 || s.viewportPx <= 0) return null;
+  return s;
+}
+
+// 覆盖层当前的"绑定状态":读得到目标真实滚动 = 跟随滚动;读不到 = 只能钉在窗口上。
+// 用来给浮层显示一个看得见的状态牌,让"跟不跟得住滚动"不再是黑箱。
+function bindStateOf(o) {
+  return validScroll(o.target) ? 'scroll' : 'window';
+}
+
+// 按 UIA 读到的真实滚动百分比,把标注平移到对应位置(相对进入查看时的基准)。读不到就返回 false(保持钉住)
+function applyScrollFollow(o, physRect) {
+  const s = validScroll(o.target);
+  if (!s) return false;
+  // 视口高度 + 可视比例 -> 内容总高与可滚范围(物理像素)
+  const contentPx = s.viewportPx / (s.viewsize / 100);
+  const scrollablePhys = Math.max(0, contentPx - s.viewportPx);
+  const offsetPhys = (s.percent / 100) * scrollablePhys;
+  // 物理像素 -> 覆盖层 CSS 像素(DIP)
+  const db = o.win.getBounds();
+  const scale = db.height > 0 ? physRect.height / db.height : 1;
+  const offsetDip = offsetPhys / (scale || 1);
+  if (o.baseOffset == null) o.baseOffset = offsetDip;
+  // 绝对跟踪:标注位移 = 内容真实位移。不乘任何"灵敏度",否则会和内容错位对不齐
+  const y = offsetDip - o.baseOffset;
+  if (o.lastScrollSent == null || Math.abs(o.lastScrollSent - y) > 0.5) {
+    o.lastScrollSent = y;
+    o.win.webContents.send('scroll-to', y);
+    return true;
+  }
+  return false;
+}
+
 function setDrawMode(o, on) {
   if (o.drawMode === on) return;
   o.drawMode = on;
+  o.baseOffset = null; o.lastScrollSent = null; o.bindState = null; // 每次切换重设滚动基准+状态牌:下次查看从头对齐、重新点亮
   if (on) {
     o.win.setIgnoreMouseEvents(false);
     o.win.focus();
@@ -100,11 +143,12 @@ function toggleAnnotate() {
   createOverlay(fg, info);
 }
 
-// 追踪循环:跟随移动/缩放,目标最小化或失去前台就藏起来;查看模式下把滚轮换算成标注平移
+// 追踪循环:跟随移动/缩放,目标最小化或失去前台就藏起来;查看模式下按 UIA 真实滚动平移标注
+// 返回这一帧是否"有动静"(位置变了 / 滚动了),用来驱动自适应节奏
 function tick() {
-  if (!overlays.size) return;
+  if (!overlays.size) return false;
   const fg = win32.getForegroundWindow();
-  const wheel = win32.takeWheel(); // 系统级累积的滚轮增量(单位 120/格)
+  let busy = false;
   for (const [key, o] of overlays) {
     const state = win32.getWindowState(o.target);
     if (!state) { // 目标窗口关闭
@@ -115,17 +159,40 @@ function tick() {
     const active = win32.same(fg, o.target) || win32.same(fg, o.overlayHwnd);
     const shouldShow = !state.minimized && !state.cloaked && state.rect && active;
     if (shouldShow) {
-      applyBounds(o, state.rect);
-      if (!o.visible) { o.win.showInactive(); o.visible = true; }
-      // 只在查看模式、且滚的正是这个目标窗口时,跟随滚动平移标注
-      if (wheel && !o.drawMode && win32.same(fg, o.target)) {
-        o.win.webContents.send('scroll', -(wheel / 120) * scrollPxPerNotch);
+      // 物理矩形没变就整帧跳过 DPI 换算/setBounds,只有真移动了才对齐,拖动时才顶格出力
+      const r = state.rect;
+      const pk = `${r.x},${r.y},${r.width},${r.height}`;
+      if (pk !== o.lastPhys) { o.lastPhys = pk; applyBounds(o, r); busy = true; }
+      if (!o.visible) { o.win.showInactive(); o.visible = true; busy = true; }
+      // 查看模式且目标在前台:把"绑定状态"发给浮层(变了才发,显示可见的状态牌),再按真实滚动平移标注
+      if (!o.drawMode && win32.same(fg, o.target)) {
+        if (scrollFollow) {
+          const bs = bindStateOf(o);
+          if (o.bindState !== bs) { o.bindState = bs; o.win.webContents.send('bind-state', bs); }
+          if (applyScrollFollow(o, state.rect)) busy = true;
+        } else if (o.bindState !== null) {
+          o.bindState = null; // 用户关掉跟随:清掉状态,不发牌子;重新开启再点亮
+        }
       }
     } else {
       if (o.drawMode && !win32.same(fg, o.overlayHwnd)) setDrawMode(o, false);
-      if (o.visible) { o.win.hide(); o.visible = false; }
+      if (o.visible) { o.win.hide(); o.visible = false; o.lastPhys = null; o.baseOffset = null; busy = true; }
     }
   }
+  return busy;
+}
+
+// 自适应节奏:有动静时贴到 8ms 高频跟手,静止后回落 24ms 省电,完全没标注时 120ms 极懒待命
+let trackTimer = null;
+let calmFrames = 0;
+function trackLoop() {
+  const busy = tick();
+  calmFrames = busy ? 0 : Math.min(calmFrames + 1, 9999);
+  let delay;
+  if (!overlays.size) delay = 120;
+  else if (calmFrames < 24) delay = 8;   // 刚有动静的一小段时间保持高频,拖动/滚动才跟得紧
+  else delay = 24;                        // 静止:一秒 ~40 次,足够第一时间发现窗口又动了
+  trackTimer = setTimeout(trackLoop, delay);
 }
 
 function overlayOf(sender) {
@@ -165,19 +232,19 @@ let trayKeys = { annotateKey: null, quitKey: null };
 
 function buildTrayMenu() {
   const { annotateKey, quitKey } = trayKeys;
-  const scrollItem = (label, px) => ({
-    label, type: 'radio', checked: scrollPxPerNotch === px,
-    click: () => { scrollPxPerNotch = px; settings.set('scrollPxPerNotch', px); },
-  });
   return Menu.buildFromTemplate([
     { label: `标注当前窗口:${annotateKey ? annotateKey.replace(/Control/g, 'Ctrl') : '全部组合被占用'}`, enabled: false },
     { label: `退出程序:${quitKey ? quitKey.replace(/Control/g, 'Ctrl') : '—'}`, enabled: false },
     { type: 'separator' },
     { label: '开机自动启动', type: 'checkbox', checked: isAutoStart(),
       click: (mi) => { setAutoStart(mi.checked); } },
-    { label: '滚动跟随灵敏度', submenu: [
-      scrollItem('慢', 60), scrollItem('正常', 100), scrollItem('快', 140),
-    ] },
+    { label: '跟随页面滚动(浏览器/PDF/笔记等;读不到就钉在窗口上)', type: 'checkbox', checked: scrollFollow,
+      click: (mi) => {
+        scrollFollow = mi.checked;
+        settings.set('scrollFollow', mi.checked);
+        if (mi.checked) scrollUia.start(); else scrollUia.stop();
+        tray.setContextMenu(buildTrayMenu());
+      } },
     { type: 'separator' },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
     { label: '退出', click: () => app.quit() },
@@ -214,14 +281,14 @@ if (!app.requestSingleInstanceLock()) {
     else body = '把标注贴到当前窗口:Ctrl+Alt+A;退出:Ctrl+Alt+Q';
     new Notification({ title: 'Window Annotator 正在后台运行', body }).show();
 
-    const hookOk = win32.installWheelHook();
-    console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'} 滚轮钩子=${hookOk ? 'OK' : '失败'}`);
+    if (scrollFollow) scrollUia.start(); // 跟随页面滚动开着才拉起 UIA 读取器,平时零开销
+    console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'} 跟随滚动=${scrollFollow ? 'UIA' : '关'}`);
 
-    setInterval(tick, 16);
+    trackLoop();
   });
 }
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); win32.uninstallWheelHook(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); scrollUia.stop(); });
 app.on('window-all-closed', () => {}); // 没有覆盖层时也保持后台驻留
 
 module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays };

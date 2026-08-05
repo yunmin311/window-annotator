@@ -23,6 +23,8 @@ body.draw #canvas [data-id]:hover { filter: drop-shadow(0 0 2px rgba(0,0,0,.45))
 }
 body.draw .note { pointer-events: auto; cursor: grab; }
 body.draw .note:hover { background: rgba(255,255,255,.35); }
+body.draw .note.sel { background: rgba(255,255,255,.5);
+  outline: 1.5px solid var(--accent, #e5484d); outline-offset: 2px; border-radius: 4px; }
 .note.editing { cursor: text; background: rgba(255,255,255,.72) !important;
   min-width: 96px; min-height: 1.3em; caret-color: currentColor;
   box-shadow: 0 2px 12px rgba(0,0,0,.22); outline: 1.5px dashed currentColor; outline-offset: 2px;
@@ -45,6 +47,28 @@ body.view.has-items #chip, body.view #chip:hover { opacity: .5; }
 #chip:hover { opacity: 1 !important; transform: scale(1.12); }
 body.draw #chip { display: none; }
 
+/* 绑定状态牌:查看模式下短暂告诉用户标注到底"跟随滚动中"还是"只钉在窗口上",让跟随不再是黑箱。
+   左下角(避开右下角的 ✎),鼠标穿透,2.6s 后淡出;画笔模式不显示。左端一个色点表状态。 */
+#bind-badge {
+  position: fixed; left: 14px; bottom: 14px; pointer-events: none; z-index: 5;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px 5px 10px; border-radius: 999px;
+  font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11.5px; line-height: 1;
+  color: rgba(255,255,255,.9); background: rgba(24,24,27,.9);
+  border: 1px solid rgba(255,255,255,.08); box-shadow: 0 4px 16px rgba(0,0,0,.32);
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .28s ease, transform .28s ease;
+}
+#bind-badge::before {                          /* 状态色点:绿=真跟滚动,琥珀=只跟窗口 */
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dot, #f0b055); box-shadow: 0 0 6px var(--dot, #f0b055);
+}
+#bind-badge.show { opacity: .92; transform: translateY(0); }
+#bind-badge.scroll { --dot: #6bd39a; }
+#bind-badge.window { --dot: #f0b055; }
+body.draw #bind-badge { display: none; }       /* 画笔模式不谈跟随,不显示 */
+@media (prefers-reduced-motion: reduce) { #bind-badge { transition: opacity .28s ease; } }
+
 /* 工具条 */
 #toolbar {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
@@ -54,17 +78,38 @@ body.draw #chip { display: none; }
   box-shadow: 0 6px 24px rgba(0,0,0,.35);
   font-family: 'Segoe UI', system-ui, sans-serif;
 }
-body.draw #toolbar { display: flex; }
+/* 进入标注模式时,工具条轻轻落下(淡入+下滑+微放大),参考 Typeless 的柔和登场 */
+body.draw #toolbar { display: flex; animation: toolbar-in .24s cubic-bezier(.16,1,.3,1); }
+@keyframes toolbar-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.97); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
+}
 #app-name { color: rgba(255,255,255,.45); font-size: 12px; padding: 0 4px; max-width: 120px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #toolbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.14); margin: 0 4px; }
+
+/* 滑动高亮胶囊:唯一的"当前工具"指示,在工具间平滑滑行+变宽,而不是每个按钮各自闪一下底色 */
+#tool-ink {
+  position: absolute; left: 0; top: 0; width: 30px; height: 30px;
+  border-radius: 999px; background: rgba(255,255,255,.20); opacity: 0;
+  z-index: 0; pointer-events: none; will-change: transform, width;
+  transition: transform .3s cubic-bezier(.32,.72,0,1), width .3s cubic-bezier(.32,.72,0,1);
+}
 #toolbar button {
+  position: relative; z-index: 1;
   border: none; background: transparent; color: rgba(255,255,255,.85);
   width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
   font-size: 15px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: background .13s ease, transform .09s ease;
 }
 #toolbar button:hover { background: rgba(255,255,255,.12); }
-#toolbar button.active { background: rgba(255,255,255,.22); }
+#toolbar button:active { transform: scale(.90); }          /* 按下时轻轻一缩,有敲击手感 */
+#toolbar button.active { background: transparent; }         /* 当前工具由滑动胶囊指示,不再各自变底 */
+
+@media (prefers-reduced-motion: reduce) {
+  body.draw #toolbar { animation: none; }
+  #tool-ink, #toolbar button { transition: none; }
+}
 #toolbar button[data-tool="note"] { font-family: 'Ink Free', 'Segoe Print', cursive; font-weight: 700; }
 #done { width: auto !important; padding: 0 12px; border-radius: 999px !important;
   font-size: 13px !important; background: rgba(255,255,255,.16) !important; }

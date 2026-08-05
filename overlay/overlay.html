@@ -17,13 +17,18 @@
   <!-- 查看模式下的小入口:悬停可点,进入标注 -->
   <button id="chip" class="hoverable" title="标注这个窗口 (Ctrl+Alt+A)">✎</button>
 
+  <!-- 绑定状态牌:查看模式短暂提示标注到底"跟随滚动中"还是"只钉在窗口上",让跟随不再是黑箱 -->
+  <div id="bind-badge"></div>
+
   <!-- 标注模式工具条 -->
   <div id="toolbar" class="hoverable">
+    <div id="tool-ink"></div><!-- 滑动的高亮胶囊:在工具间平滑滑动,指示当前工具 -->
     <span id="app-name"></span>
     <span class="sep"></span>
     <button class="tool active" data-tool="pen"    title="画笔">✏️</button>
     <button class="tool" data-tool="arrow"  title="箭头">↗</button>
-    <button class="tool" data-tool="hl"     title="荧光笔">▆</button>
+    <button class="tool" data-tool="rect"   title="方框(框住重点)">▭</button>
+    <button class="tool" data-tool="hl"     title="荧光笔(划一道自动拉平)">▆</button>
     <button class="tool" data-tool="note"   title="手写便签">Aa</button>
     <button class="tool" data-tool="eraser" title="橡皮(点谁擦谁)">⌫</button>
     <span class="sep"></span>
