@@ -1,11 +1,29 @@
-// UIA 滚动读取器(Node 侧):按需拉起一个常驻 PowerShell 子进程,持续读"前台窗口的真实滚动",
-// 主进程随用随取。读不到就返回 null,由 main.js 自动退回"标注钉在窗口上"的稳妥行为。
+// UIA 滚动读取器(Node 侧,多区版):拉起常驻 PowerShell 子进程,持续读"前台窗口的所有可滚动区",
+// 主进程随用随取。读不到就返回 null,由 main.js 退回"标注钉在窗口上"。
+// 兼容:get() 仍返回"最大的那块区"(旧单区口径),getRegions() 返回全部区(多区新路)。
 'use strict';
 const { spawn } = require('child_process');
 const path = require('path');
 
 let proc = null;
-const latest = new Map(); // hwnd 字符串 -> { percent, viewsize, viewportPx, t }
+const latest = new Map(); // hwnd 字符串 -> { regions:[{x,y,w,h,percent,viewsize}], t }
+
+// 纯函数:解析一行 reader 输出。返回 { hwnd, regions } / { na:hwnd } / null。抽出来好无头单测。
+function parseLine(line) {
+  if (!line) return null;
+  if (line.startsWith('S ')) {
+    const bar = line.indexOf('|');
+    if (bar < 0) return null;
+    const hwnd = line.slice(2, bar).trim();
+    const regions = line.slice(bar + 1).split('|').map((seg) => {
+      const p = seg.split(',');
+      return { x: +p[0], y: +p[1], w: +p[2], h: +p[3], percent: +p[4], viewsize: +p[5] };
+    }).filter((r) => Number.isFinite(r.percent) && r.w > 0 && r.h > 0);
+    return { hwnd, regions };
+  }
+  if (line.startsWith('NA ')) return { na: line.slice(3).trim() };
+  return null;
+}
 
 function start() {
   if (proc) return;
@@ -22,18 +40,10 @@ function start() {
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
-      if (!line) continue;
-      const p = line.split(/\s+/);
-      if (p[0] === 'S') {
-        latest.set(p[1], {
-          percent: parseFloat(p[2]),
-          viewsize: parseFloat(p[3]),
-          viewportPx: parseFloat(p[4]) || 0,
-          t: Date.now(),
-        });
-      } else if (p[0] === 'NA') {
-        latest.delete(p[1]);
-      }
+      const r = parseLine(line);
+      if (!r) continue;
+      if (r.na !== undefined) latest.delete(r.na);
+      else latest.set(r.hwnd, { regions: r.regions, t: Date.now() });
     }
   });
   proc.on('exit', () => { proc = null; latest.clear(); });
@@ -45,11 +55,21 @@ function stop() {
   latest.clear();
 }
 
-// 取某窗口最近一次读到的滚动;太旧(>1s,说明已读不到)视为无效
-function get(hwnd) {
+// 某窗口最近读到的所有可滚动区;太旧(>1s)视为无效
+function getRegions(hwnd) {
   const v = latest.get(BigInt(hwnd).toString());
   if (!v || Date.now() - v.t > 1000) return null;
-  return v;
+  return v.regions;
 }
 
-module.exports = { start, stop, get };
+// 旧单区口径:最大的那块正在滚的区,包成旧形状 {percent, viewsize, viewportPx}。main 暂时还用它,不回归。
+function get(hwnd) {
+  const rs = getRegions(hwnd);
+  if (!rs || !rs.length) return null;
+  let best = null, bestArea = -1;
+  for (const r of rs) { const a = r.w * r.h; if (a > bestArea) { bestArea = a; best = r; } }
+  if (!best) return null;
+  return { percent: best.percent, viewsize: best.viewsize, viewportPx: best.h };
+}
+
+module.exports = { start, stop, get, getRegions, parseLine };

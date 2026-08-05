@@ -1,11 +1,12 @@
-# Resident scroll reader: continuously feeds the foreground window's REAL vertical scroll to the main process.
-# Spawned by main.js (via scroll-uia.js) when "follow page scroll" is on. windowsHide = silent.
-# NOTE: ASCII-only on purpose. PowerShell 5.1 reads .ps1 as ANSI; non-ASCII comments get mangled into
-#       broken quotes/braces and the whole script fails to parse (silent dead reader). Keep it ASCII.
-# Output line:  S <hwnd> <percent> <viewsize> <viewportPx>   or   NA <hwnd>
-#   percent    = VerticalScrollPercent (0..100 how far scrolled; -1 = not scrollable now)
-#   viewsize   = VerticalViewSize (percent of content currently visible)
-#   viewportPx = physical pixel height of the scrollable element (to infer total content height)
+# Resident scroll reader (MULTI-REGION): feeds the foreground window's scrollable regions to the main
+# process. Each region = one UIA ScrollPattern element (the page, a sidebar, a pane...). The main
+# process picks, per annotation, which region it sits on and follows THAT region's scroll.
+# Output line:  S <hwnd>|<x>,<y>,<w>,<h>,<vpct>,<vvs>|<x>,<y>,<w>,<h>,<vpct>,<vvs>   or   NA <hwnd>
+#   x,y,w,h = region rect in PHYSICAL pixels; vpct = VerticalScrollPercent; vvs = VerticalViewSize.
+# Finding regions is slow, so we cache the region ELEMENTS and only re-enumerate on a foreground change
+# or a periodic self-heal tick; each 45ms frame just re-reads the cached elements' scroll+rect (cheap).
+# NOTE: ASCII-only on purpose. PS5.1 reads .ps1 as ANSI; non-ASCII comments get mangled and the whole
+#       script fails to parse (silent dead reader). Keep it ASCII.
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type @"
@@ -21,36 +22,32 @@ $treeSub   = [System.Windows.Automation.TreeScope]::Subtree
 $out       = [Console]::Out
 
 $lastH  = [IntPtr]::Zero
-$el     = $null
+$els    = @()
 $ticks  = 0
-# Re-locate the scroll element about every REFIND ticks (~1.8s) even when the foreground window
-# has not changed. This self-heals after in-page navigation (single-page web apps keep the same
-# window handle), late-loading content, or an element that detached. Between re-finds the cached
-# 45ms read still dominates, so CPU stays low. A non-scrollable window pays only one FindAll / 1.8s.
-$REFIND = 40
+$REFIND = 90   # re-enumerate regions ~every 4s. FindAll over a big tree (browsers) is expensive, so keep
+               # it infrequent; foreground changes still re-enumerate immediately. Self-heals new panes / SPA nav.
 
-# Locate the element to track for a given root window. A window can expose several scrollable
-# elements (tiny popups, sidebars, the main content). Pick the LARGEST one that is actually
-# scrolling now (VerticalViewSize < 99 => content taller than viewport); if none is scrolling yet,
-# fall back to the largest scrollable overall. This reliably lands on the main content pane.
-function Find-ScrollEl($root) {
-  if ($root -eq $null) { return $null }
-  if ([bool]$root.GetCurrentPropertyValue($availProp)) { return $root }
+# Find the scrollable regions worth tracking: has ScrollPattern, big enough (drop tiny inline noise),
+# and on-screen relative to the window. Returns the UIA elements (re-read each frame). Slow -> cached.
+function Find-Regions($root) {
+  if ($root -eq $null) { return @() }
+  $wr = $null
+  try { $wr = $root.Current.BoundingRectangle } catch {}
   $all = $root.FindAll($treeSub, $cond)
-  $best = $null; $bestArea = -1        # largest among truly-scrolling (viewsize < 99)
-  $any  = $null; $anyArea  = -1        # largest scrollable overall (fallback)
+  $res = @()
   foreach ($e in $all) {
     $rb = $null
     try { $rb = $e.Current.BoundingRectangle } catch { continue }
     if ($rb -eq $null -or $rb.IsEmpty) { continue }
-    $area = $rb.Width * $rb.Height
-    if ($area -gt $anyArea) { $anyArea = $area; $any = $e }
-    $vs = 100.0
-    try { $vs = $e.GetCurrentPattern($scrollPat).Current.VerticalViewSize } catch {}
-    if ($vs -lt 99 -and $area -gt $bestArea) { $bestArea = $area; $best = $e }
+    if ($rb.Width -lt 60 -or $rb.Height -lt 60) { continue }              # drop slivers / 2-3px noise
+    if (($rb.Width * $rb.Height) -lt 10000) { continue }
+    if ($wr -ne $null -and -not $wr.IsEmpty) {                            # drop off-screen (center outside window)
+      $cx = $rb.X + $rb.Width / 2; $cy = $rb.Y + $rb.Height / 2
+      if ($cx -lt $wr.X -or $cx -gt ($wr.X + $wr.Width) -or $cy -lt $wr.Y -or $cy -gt ($wr.Y + $wr.Height)) { continue }
+    }
+    $res += $e
   }
-  if ($best -ne $null) { return $best }
-  return $any
+  return $res
 }
 
 while ($true) {
@@ -59,34 +56,31 @@ while ($true) {
     $hl = [int64]$h
     $ticks++
 
-    # Re-find on a foreground change (immediately) or on the periodic self-heal tick. We deliberately
-    # do NOT re-find just because $el is null, so a genuinely non-scrollable window (Notepad, a dialog)
-    # does not run FindAll every 45ms.
     if (($h -ne $lastH) -or (($ticks % $REFIND) -eq 0)) {
       $lastH = $h
-      $el = Find-ScrollEl ($ae::FromHandle($h))
+      $els = Find-Regions ($ae::FromHandle($h))
     }
 
-    if ($el -ne $null) {
-      $c = $el.GetCurrentPattern($scrollPat).Current
-      $h_px = 0.0
-      $bad  = $false
-      # if the cached element detached (rect empty / throws), drop it so the next self-heal re-finds
-      try { $r = $el.Current.BoundingRectangle; if ($r.IsEmpty) { $bad = $true } else { $h_px = $r.Height } } catch { $bad = $true }
-      if ($bad) {
-        $el = $null
-        $out.WriteLine("NA $hl")
-      } else {
-        $out.WriteLine(("S {0} {1:0.###} {2:0.###} {3:0.#}" -f $hl, $c.VerticalScrollPercent, $c.VerticalViewSize, $h_px))
-      }
-    } else {
-      $out.WriteLine("NA $hl")
+    $parts = @()
+    $bad = $false
+    foreach ($e in $els) {
+      try {
+        $sp  = $e.GetCurrentPattern($scrollPat).Current
+        $vvs = $sp.VerticalViewSize
+        if ($vvs -ge 99.5) { continue }                                  # not actually scrolling right now
+        $rb = $e.Current.BoundingRectangle
+        if ($rb.IsEmpty) { $bad = $true; continue }
+        $parts += ("{0:0},{1:0},{2:0},{3:0},{4:0.###},{5:0.###}" -f $rb.X, $rb.Y, $rb.Width, $rb.Height, $sp.VerticalScrollPercent, $vvs)
+      } catch { $bad = $true }
     }
+    if ($bad) { $lastH = [IntPtr]::Zero }                                # something detached: re-enumerate next tick
+
+    if ($parts.Count -gt 0) { $out.WriteLine("S $hl|" + ($parts -join "|")) }
+    else { $out.WriteLine("NA $hl") }
     $out.Flush()
   } catch {
-    # cached element went stale (page reflow / navigation): drop it, re-find next tick
     $lastH = [IntPtr]::Zero
-    $el = $null
+    $els = @()
     try { $out.WriteLine("NA 0"); $out.Flush() } catch {}
   }
   Start-Sleep -Milliseconds 45
