@@ -41,7 +41,7 @@ draw on it. All code is an independent implementation.
 | 🪟 **On any window** | Browser, PDF, chat, editor… if it's a window, you can mark it up |
 | 🎯 **Marks follow the window** | Move or resize the window and annotations track it in real time — not a frozen screenshot |
 | 📜 **Follows page scrolling** | Scroll and marks track the real scroll position — main content and sidebar each followed on their own; apps that don't expose scrolling fall back to pinning (see [FAQ](#-faq)) |
-| ✏️ **Five hand-drawn tools** | Pen, hand-drawn arrow, highlighter, handwritten note, eraser — six colors |
+| ✏️ **Six drawing tools** | Pen, hand-drawn arrow, box, highlighter, handwritten note, eraser — six colors |
 | 💾 **Remembers automatically** | Saved per "app + window title"; close and reopen the window, the marks come back |
 | 🫥 **Stays out of your way** | One tap and the overlay becomes click-through — keep using the window underneath |
 | 🔔 **Lives in the tray** | A red ✎ icon; auto-start and the follow toggle are in the right-click menu |
@@ -49,13 +49,9 @@ draw on it. All code is an independent implementation.
 
 ## Screenshots
 
-**The toolbar in annotate mode** (pen / arrow / highlighter / note / eraser + six colors):
+**The toolbar in annotate mode** (pen / arrow / box / highlighter / note / eraser + six colors):
 
-<img src="docs/toolbar.png" alt="Floating toolbar" width="640">
-
-**The tray right-click menu** (auto-start and the follow toggle live here):
-
-<img src="docs/tray.png" alt="Tray menu" width="380">
+<img src="docs/toolbar.png" alt="Floating toolbar" width="680">
 
 ## 📦 Install
 

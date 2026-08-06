@@ -27,12 +27,20 @@ else if(it.type==='rect'){p.setAttribute('d',rectPath(it));p.setAttribute('strok
 
 const NOTE_CSS = `
 .note{position:absolute;font-family:'Ink Free','Segoe Print',cursive;font-size:20px;line-height:1.3;font-weight:600;white-space:pre-wrap;
+width:max-content;max-width:320px;
 text-shadow:0 1px 0 rgba(255,255,255,.6),0 -1px 0 rgba(255,255,255,.6),1px 0 0 rgba(255,255,255,.6),-1px 0 0 rgba(255,255,255,.6);}
 #canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #notes{position:absolute;inset:0}
 `;
 
-// 模拟"浏览器窗口 + 一篇文章",再叠标注——展示"任意窗口都能标"。工具条=当前真实的六个工具(含方框 ▭)
+// 深色玻璃工具条(磨砂 + 顶部高光 + 分层阴影),和 overlay.css 里真实工具条同款质感
+const GLASS_BAR = `
+  background:linear-gradient(180deg,rgba(44,44,49,.80),rgba(20,20,23,.90));
+  -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 14px 44px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.16);`;
+
+// 模拟"浏览器窗口 + 一篇文章",再叠标注——展示"任意窗口都能标"。工具条=当前真实六个工具(含方框 ▭)
 function heroHTML(withToolbar) {
   const toolbar = withToolbar ? `
   <div class="wa-toolbar">
@@ -59,11 +67,10 @@ function heroHTML(withToolbar) {
   ${NOTE_CSS}
   /* 工具条 */
   .wa-toolbar{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
-    background:rgba(24,24,27,.94);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:6px 12px;
-    box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:9}
-  .wa-toolbar .app{color:rgba(255,255,255,.45);font-size:12px;padding:0 4px}
-  .wa-toolbar .sep{width:1px;height:18px;background:rgba(255,255,255,.16);margin:0 5px}
-  .wa-toolbar button{border:none;background:transparent;color:#eee;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer}
+    border-radius:999px;padding:6px 12px;z-index:9;${GLASS_BAR}}
+  .wa-toolbar .app{color:rgba(255,255,255,.5);font-size:12px;padding:0 4px}
+  .wa-toolbar .sep{width:1px;height:18px;background:rgba(255,255,255,.18);margin:0 5px}
+  .wa-toolbar button{border:none;background:transparent;color:#f0f0f2;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer}
   .wa-toolbar button.on{background:rgba(255,255,255,.22)}
   .wa-toolbar button.ink{font-family:'Ink Free','Segoe Print',cursive;font-weight:700}
   .wa-toolbar i{width:16px;height:16px;border-radius:50%;display:inline-block;margin:0 2px;border:2px solid transparent}
@@ -104,27 +111,28 @@ function heroHTML(withToolbar) {
   </body></html>`;
 }
 
-// 工具条特写(柔和背景 + 放大的工具条),六个工具:画笔 / 箭头 / 方框 / 荧光笔 / 手写便签 / 橡皮
+// 工具条特写:居中、不缩放(靠 shootFit 紧裁,保证完整+居中),六个工具:画笔/箭头/方框/荧光笔/便签/橡皮
 function toolbarHTML() {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
-  body{width:960px;height:200px;background:linear-gradient(135deg,#f6f7fb,#e9edf5);display:flex;align-items:center;justify-content:center;overflow:hidden}
-  .bar{display:flex;align-items:center;gap:6px;background:rgba(24,24,27,.96);border:1px solid rgba(255,255,255,.08);
-    border-radius:999px;padding:12px 22px;box-shadow:0 18px 50px rgba(0,0,0,.4);transform:scale(1.3)}
-  .bar .app{color:rgba(255,255,255,.45);font-size:13px;padding:0 6px}
-  .bar .sep{width:1px;height:22px;background:rgba(255,255,255,.16);margin:0 7px}
-  .bar button{border:none;background:transparent;color:#eee;width:36px;height:36px;border-radius:50%;font-size:17px;cursor:pointer;position:relative}
-  .bar button.on{background:rgba(255,255,255,.24)}
-  .bar button.ink{font-family:'Ink Free','Segoe Print',cursive;font-weight:700}
-  .bar i{width:18px;height:18px;border-radius:50%;display:inline-block;margin:0 3px;border:2px solid transparent}
-  .bar i.on{border-color:#fff}
-  .bar b{margin-left:8px;padding:7px 16px;background:rgba(255,255,255,.2);border-radius:999px;color:#fff;font-size:14px;font-weight:500}
-  .tip{position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;color:#fff;
-    background:rgba(30,30,34,.9);padding:3px 9px;border-radius:6px}
+  body{width:100vw;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(560px 300px at 26% 32%, rgba(120,140,255,.34), transparent 60%),
+      radial-gradient(520px 280px at 76% 70%, rgba(255,168,120,.30), transparent 62%),
+      linear-gradient(135deg,#eef1f8,#e5ebf6)}
+  #shot{display:flex;align-items:center;gap:6px;border-radius:999px;padding:13px 24px;${GLASS_BAR}}
+  #shot .app{color:rgba(255,255,255,.55);font-size:14px;padding:0 6px}
+  #shot .sep{width:1px;height:22px;background:rgba(255,255,255,.20);margin:0 8px}
+  #shot button{border:none;background:transparent;color:#f2f2f4;width:40px;height:40px;border-radius:50%;font-size:19px;cursor:pointer}
+  #shot button.on{background:rgba(255,255,255,.24)}
+  #shot button.ink{font-family:'Ink Free','Segoe Print',cursive;font-weight:700}
+  #shot i{width:20px;height:20px;border-radius:50%;display:inline-block;margin:0 3px;border:2px solid transparent}
+  #shot i.on{border-color:#fff}
+  #shot b{margin-left:8px;padding:8px 18px;background:rgba(255,255,255,.20);border-radius:999px;color:#fff;font-size:15px;font-weight:500}
   </style></head><body>
-    <div class="bar">
+    <div id="shot">
       <span class="app">当前窗口</span><span class="sep"></span>
-      <button title="画笔">✏️<span class="tip">画笔</span></button>
+      <button title="画笔">✏️</button>
       <button class="on" title="箭头">↗</button>
       <button title="方框">▭</button>
       <button title="荧光笔">▆</button>
@@ -138,51 +146,32 @@ function toolbarHTML() {
   </body></html>`;
 }
 
-// 托盘右键菜单 mock —— 现在是自绘的深色玻璃菜单(和工具条同语言),开机自启 / 跟随页面滚动 两个勾选项
-function trayHTML() {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
-  body{width:520px;height:400px;background:linear-gradient(135deg,#eef1f6,#dfe4ee);position:relative}
-  .taskbar{position:absolute;bottom:0;left:0;right:0;height:48px;background:rgba(243,244,246,.96);border-top:1px solid #e2e5ea;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;gap:16px;color:#4b5563;font-size:13px}
-  .trayicon{width:26px;height:26px;border-radius:50%;background:#e5484d;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 0 3px rgba(229,72,77,.18)}
-  .menu{position:absolute;right:22px;bottom:60px;display:flex;flex-direction:column;min-width:210px;
-    background:rgba(30,30,33,.97);border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:6px;
-    box-shadow:0 14px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);color:rgba(255,255,255,.92);font-size:13px}
-  .row{display:flex;align-items:center;gap:8px;height:32px;padding:0 14px 0 8px;border-radius:7px;white-space:nowrap}
-  .row .ck{flex:0 0 15px;width:15px;text-align:center;color:#6bd39a;font-size:12px;opacity:0}
-  .row.on .ck{opacity:1}
-  .row .tx{flex:1}
-  .row .sc{margin-left:20px;color:rgba(255,255,255,.4);font-size:11.5px}
-  .row.info{height:27px;color:rgba(255,255,255,.45)}
-  .row.info .tx{font-size:12px}
-  .row.hover{background:rgba(255,255,255,.11)}
-  .sep{height:1px;background:rgba(255,255,255,.09);margin:5px 8px}
-  </style></head><body>
-    <div class="menu">
-      <div class="row info"><span class="ck"></span><span class="tx">标注当前窗口</span><span class="sc">Ctrl+Alt+A</span></div>
-      <div class="row info"><span class="ck"></span><span class="tx">退出程序</span><span class="sc">Ctrl+Alt+Q</span></div>
-      <div class="sep"></div>
-      <div class="row on"><span class="ck">✓</span><span class="tx">开机自动启动</span></div>
-      <div class="row on hover"><span class="ck">✓</span><span class="tx">跟随页面滚动</span></div>
-      <div class="sep"></div>
-      <div class="row"><span class="ck"></span><span class="tx">打开标注存档文件夹</span></div>
-      <div class="row"><span class="ck"></span><span class="tx">退出</span></div>
-    </div>
-    <div class="taskbar"><div class="trayicon">✎</div><span>16:42</span></div>
-  </body></html>`;
-}
-
+// 整窗截图(hero):按窗口大小整张抓
 async function shoot(win, html, file) {
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-  await sleep(700);
+  await sleep(750);
   const img = await win.webContents.capturePage();
   fs.writeFileSync(path.join(OUT, file), img.toPNG());
   console.log('saved', file);
 }
 
+// 元素特写:量出 #shot 尺寸,把窗口缩到"主体 + 四周等距留白"再整张抓 ——
+// 用缩窗口(而不是裁剪)保证主体完整、居中、周围留白匀称,绝不会切到边
+async function shootFit(win, html, file, pad = 56) {
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  await sleep(750);
+  const r = await win.webContents.executeJavaScript(
+    `(()=>{const b=document.getElementById('shot').getBoundingClientRect();return{w:Math.ceil(b.width),h:Math.ceil(b.height)};})()`);
+  win.setContentSize(r.w + pad * 2, r.h + pad * 2);   // 窗口缩到贴合主体;body flex 居中 -> 四周 pad 均匀
+  await sleep(220);
+  const img = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(OUT, file), img.toPNG());
+  console.log('saved', file, 'shot', JSON.stringify(r));
+}
+
 app.whenReady().then(async () => {
   const mk = (w, h) => new BrowserWindow({
-    width: w, height: h, show: false, frame: false, useContentSize: true,
+    width: w, height: h, show: false, frame: false, useContentSize: true, transparent: true,
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
 
@@ -190,13 +179,9 @@ app.whenReady().then(async () => {
   await shoot(hero, heroHTML(true), 'hero.png');
   hero.close();
 
-  const bar = mk(960, 200);
-  await shoot(bar, toolbarHTML(), 'toolbar.png');
+  const bar = mk(1360, 360);
+  await shootFit(bar, toolbarHTML(), 'toolbar.png');
   bar.close();
-
-  const tray = mk(520, 400);
-  await shoot(tray, trayHTML(), 'tray.png');
-  tray.close();
 
   console.log('DONE');
   app.exit(0);
