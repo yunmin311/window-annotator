@@ -44,7 +44,7 @@ const GLASS_BAR = `
 function heroHTML(withToolbar) {
   const toolbar = withToolbar ? `
   <div class="wa-toolbar">
-    <span class="app">chrome</span><span class="sep"></span>
+    <span class="app">chrome</span><button style="opacity:.62">◐</button><span class="sep"></span>
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
@@ -131,7 +131,7 @@ function toolbarHTML() {
   #shot b{margin-left:8px;padding:8px 18px;background:rgba(255,255,255,.20);border-radius:999px;color:#fff;font-size:15px;font-weight:500}
   </style></head><body>
     <div id="shot">
-      <span class="app">当前窗口</span><span class="sep"></span>
+      <span class="app">当前窗口</span><button style="opacity:.62" title="滚轮作用:透明度/缩放">◐</button><span class="sep"></span>
       <button title="画笔">✏️</button>
       <button class="on" title="箭头">↗</button>
       <button title="方框">▭</button>

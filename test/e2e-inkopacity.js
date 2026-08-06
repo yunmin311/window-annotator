@@ -1,4 +1,4 @@
-// 冒烟测:画笔模式下滚轮调标注透明度。加载真实 overlay,进画笔模式,上滚变淡/下滚变实/切模式复位。
+// 冒烟测:画笔模式滚轮两作用(透明度 / 缩放)+ 小图标切换。加载真实 overlay,进画笔模式逐一验。
 // 用法: electron test/e2e-inkopacity.js
 'use strict';
 process.env.WA_TEST = '1';
@@ -22,38 +22,48 @@ app.whenReady().then(async () => {
   });
   await w.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'));
   const wc = w.webContents;
+  const jsNum = (expr) => wc.executeJavaScript(expr);
+  const wheelN = (dy, n) => wc.executeJavaScript(`for(let i=0;i<${n};i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:${dy},cancelable:true})); true;`);
 
   await wc.executeJavaScript(`addItem({id:1,type:'pen',color:'red',points:[[100,100],[150,130]]}); true;`);
   wc.send('mode', 'draw');
   await sleep(250);
-  check('进入画笔模式', (await wc.executeJavaScript('mode')) === 'draw');
+  check('进入画笔模式', (await jsNum('mode')) === 'draw');
+  check('默认滚轮作用=透明度', (await jsNum('wheelMode')) === 'opacity');
 
-  const op = () => wc.executeJavaScript('parseFloat(document.getElementById("canvas").style.opacity||"1")');
-  const op0 = await op();
-  // 上滚三下(deltaY<0)-> 变淡
-  await wc.executeJavaScript(`for(let i=0;i<3;i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,cancelable:true})); true;`);
-  await sleep(80);
+  // —— 透明度模式 ——
+  const op = () => jsNum('parseFloat(document.getElementById("canvas").style.opacity||"1")');
+  await wheelN(-120, 3); await sleep(60);
   const op1 = await op();
-  check('上滚:标注变淡 (' + op0 + ' -> ' + op1 + ')', op1 < 0.85 && op1 >= 0.12);
+  check('上滚:标注变淡 (' + op1 + ')', op1 < 0.85 && op1 >= 0.12);
+  await wheelN(-120, 20); await sleep(60);
+  check('一直上滚:封底 ~0.12 (' + (await op()) + ')', (await op()) <= 0.13 && (await op()) >= 0.11);
+  await wheelN(120, 20); await sleep(60);
+  check('下滚:回不透明并封顶 1 (' + (await op()) + ')', (await op()) >= 0.99);
 
-  // 使劲上滚(封底 0.12 不再更淡)
-  await wc.executeJavaScript(`for(let i=0;i<20;i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,cancelable:true})); true;`);
-  await sleep(80);
-  const op2 = await op();
-  check('一直上滚:封底 ~0.12 不消失 (' + op2 + ')', op2 >= 0.11 && op2 <= 0.13);
+  // —— 切到缩放模式(点小图标)——
+  await wc.executeJavaScript(`document.getElementById('wheel-mode').click(); true;`);
+  check('点小图标 -> 切到缩放', (await jsNum('wheelMode')) === 'zoom');
+  const sc = () => jsNum('inkScale');
+  await wheelN(-120, 4); await sleep(60);
+  const s1 = await sc();
+  check('缩放模式上滚 = 放大 (scale=' + s1 + ')', s1 > 1.1);
+  check('缩放已施加到标注层', /scale\(/.test(await jsNum('document.getElementById("canvas").style.transform')));
+  await wheelN(120, 30); await sleep(60);
+  check('缩放模式一直下滚:封底 0.4 (' + (await sc()) + ')', (await sc()) <= 0.41 && (await sc()) >= 0.39);
 
-  // 下滚很多下 -> 回到不透明(封顶 1)
-  await wc.executeJavaScript(`for(let i=0;i<20;i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:120,cancelable:true})); true;`);
-  await sleep(80);
-  const op3 = await op();
-  check('下滚:回到不透明并封顶 1 (' + op3 + ')', op3 >= 0.99);
+  // 缩放模式下,滚轮不该动透明度(还是上一步的 1)
+  check('缩放模式不影响透明度', (await op()) >= 0.99);
 
-  // 先滚淡,再切回查看模式 -> 复位为 1(不把滚淡状态带进查看)
-  await wc.executeJavaScript(`for(let i=0;i<4;i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,cancelable:true})); true;`);
+  // 右键小图标 -> 切回透明度
+  await wc.executeJavaScript(`document.getElementById('wheel-mode').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})); true;`);
+  check('右键小图标 -> 切回透明度', (await jsNum('wheelMode')) === 'opacity');
+
+  // 切回查看模式 -> 透明度 + 缩放都复位
   wc.send('mode', 'view');
   await sleep(150);
-  const op4 = await op();
-  check('切回查看模式:标注复位为不透明 (' + op4 + ')', op4 >= 0.99);
+  check('切回查看:透明度复位 1', (await op()) >= 0.99);
+  check('切回查看:缩放复位 1', Math.abs((await sc()) - 1) < 0.001);
 
   logf(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
   app.exit(fails === 0 ? 0 : 1);

@@ -95,10 +95,10 @@ body.view #ink-badge { display: none; }        /* 查看模式不调透明度,�
 }
 /* 进入标注模式:从一个小胶囊"弹开"成整条 —— 因为整条一直 translateX(-50%) 居中,
    max-width 逐帧变宽时会被重新居中,看起来就是从中间向两边"啵"地展开(Typeless 那种登场) */
-body.draw #toolbar { display: flex; animation: toolbar-pop .36s cubic-bezier(.16,1,.3,1); }
+body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0,.2,1); }
 @keyframes toolbar-pop {
-  0%   { opacity: 0; max-width: 42px;  transform: translateX(-50%) translateY(-6px) scale(.96); }
-  55%  { opacity: 1; }
+  0%   { opacity: 0; max-width: 46px;  transform: translateX(-50%) translateY(-3px) scale(.9); }
+  15%  { opacity: 1; }                                   /* 先亮出小胶囊,再看着它展开 */
   100% { opacity: 1; max-width: 760px; transform: translateX(-50%) translateY(0)    scale(1); }
 }
 #app-name { color: rgba(255,255,255,.45); font-size: 12px; padding: 0 4px; max-width: 120px;
@@ -128,6 +128,7 @@ body.draw #toolbar { display: flex; animation: toolbar-pop .36s cubic-bezier(.16
   #tool-ink, #toolbar button { transition: none; }
 }
 #toolbar button[data-tool="note"] { font-family: 'Ink Free', 'Segoe Print', cursive; font-weight: 700; }
+#wheel-mode { font-size: 13px; color: rgba(255,255,255,.58); }   /* 滚轮作用切换:比工具略暗,是个次要控件 */
 #done { width: auto !important; padding: 0 12px; border-radius: 999px !important;
   font-size: 13px !important; background: rgba(255,255,255,.16) !important; }
 #done:hover { background: rgba(255,255,255,.28) !important; }

@@ -41,7 +41,7 @@ body{width:100vw;height:100vh;overflow:hidden;position:relative;background:
 #bar b{margin-left:7px;padding:7px 14px;background:rgba(255,255,255,.20);border-radius:999px;color:#fff;font-size:13px;white-space:nowrap}
 </style></head><body>
   <div id="bar">
-    <span class="app">当前窗口</span><span class="sep"></span>
+    <span class="app">当前窗口</span><button style="opacity:.62">◐</button><span class="sep"></span>
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>

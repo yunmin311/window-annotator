@@ -481,27 +481,52 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') undo();
 });
 
-// 滚轮调标注透明度:画笔模式下,在空白处滚轮让"标注层"淡入淡出 —— 在「看标注」和「看清下面窗口」
-// 之间来回切换(参考 PixPin 贴图的透明度)。悬在便签上滚是改字号(见上,那里 stopPropagation,走不到这)。
-// 上滚变淡、下滚变实;只动标注层(笔迹 + 便签),工具条 / 描边不动,随时还能操作。
+// 画笔模式下,空白处滚鼠标滚轮有两个作用,可切换(默认透明度):
+//  · 透明度:上滚变淡看清下面窗口、下滚变实(参考 PixPin 的 Ctrl+滚轮)
+//  · 缩放  :放大 / 缩小整层标注(参考 PixPin 默认滚轮缩放贴图)
+// 都只动标注层(笔迹 + 便签),工具条 / 描边不动;悬在便签上滚仍是改字号(那儿 stopPropagation,走不到这)。
+// 切换:点或右键工具条左端那个小图标(◐透明度 / 🔍缩放)。换模式复位。
 let inkOpacity = 1;
+let inkScale = 1;
+let wheelMode = 'opacity';            // 'opacity' | 'zoom'
 let inkBadgeTimer = null;
 const inkBadge = document.getElementById('ink-badge');
-function applyInkOpacity(show) {
+const wheelModeBtn = document.getElementById('wheel-mode');
+
+function applyInk(showBadge) {
   svg.style.opacity = inkOpacity;
   notesLayer.style.opacity = inkOpacity;
-  if (show && inkBadge) {
-    inkBadge.textContent = '标注 ' + Math.round(inkOpacity * 100) + '%';
+  svg.style.transformOrigin = notesLayer.style.transformOrigin = 'center';
+  svg.style.transform = notesLayer.style.transform = 'scale(' + inkScale + ')';
+  if (showBadge && inkBadge) {
+    inkBadge.textContent = wheelMode === 'zoom'
+      ? '缩放 ' + Math.round(inkScale * 100) + '%'
+      : '标注 ' + Math.round(inkOpacity * 100) + '%';
     inkBadge.classList.add('show');
     clearTimeout(inkBadgeTimer);
     inkBadgeTimer = setTimeout(() => inkBadge.classList.remove('show'), 900);
   }
 }
+function setWheelMode(m) {
+  wheelMode = m;
+  if (!wheelModeBtn) return;
+  wheelModeBtn.textContent = m === 'zoom' ? '🔍' : '◐';
+  wheelModeBtn.title = m === 'zoom'
+    ? '滚轮 = 缩放标注(点击 / 右键切成透明度)'
+    : '滚轮 = 标注透明度(点击 / 右键切成缩放)';
+}
+if (wheelModeBtn) {
+  const toggle = (e) => { if (e) e.preventDefault(); setWheelMode(wheelMode === 'zoom' ? 'opacity' : 'zoom'); applyInk(true); };
+  wheelModeBtn.addEventListener('click', toggle);
+  wheelModeBtn.addEventListener('contextmenu', toggle);
+  setWheelMode('opacity');
+}
 window.addEventListener('wheel', (e) => {
   if (mode !== 'draw') return;
   e.preventDefault();
-  inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
-  applyInkOpacity(true);
+  if (wheelMode === 'zoom') inkScale = Math.max(0.4, Math.min(2.6, inkScale + (e.deltaY > 0 ? -0.08 : 0.08)));
+  else inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
+  applyInk(true);
 }, { passive: false });
 
 /* ---------- 工具条 ---------- */
@@ -576,7 +601,7 @@ ipcRenderer.on('init', (e, data) => {
 ipcRenderer.on('mode', (e, m) => {
   mode = m;
   document.body.className = m + (items.length ? ' has-items' : '') + (tool === 'note' ? ' tool-note' : '');
-  inkOpacity = 1; applyInkOpacity(false); // 换模式复位:标注恢复不透明(别把上次滚淡的状态带过来)
+  inkOpacity = 1; inkScale = 1; applyInk(false); // 换模式复位:标注恢复不透明 + 原始大小
   if (m === 'view' && drawing) drawing = null;
   if (m === 'view') clearNoteSelection();
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
