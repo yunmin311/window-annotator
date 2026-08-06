@@ -8,53 +8,62 @@
     font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   body { padding: 18px; }                 /* 窗口透明,四周留出阴影空间(与 tray-pos 的 pad 对齐) */
 
-  /* 卡片:磨砂玻璃,浅色为默认、深色跟随系统(见底部 @media)。比上一版更小、左列更窄 */
+  /* 磨砂玻璃卡片:高不透明度(不发虚)+ 模糊/饱和 + 颗粒 + 高光,浅色默认、深色跟随系统(见底部 @media) */
   .menu {
+    position: relative; overflow: hidden;
     display: flex; flex-direction: column;
-    width: max-content; min-width: 174px;
-    background: rgba(250, 250, 251, .80);
-    -webkit-backdrop-filter: blur(26px) saturate(1.7);
-    backdrop-filter: blur(26px) saturate(1.7);
-    border: 1px solid rgba(0, 0, 0, .07);
-    border-radius: 10px; padding: 5px;
-    box-shadow: 0 10px 32px rgba(0, 0, 0, .18), 0 1px 2px rgba(0, 0, 0, .10),
-                inset 0 1px 0 rgba(255, 255, 255, .8);
-    color: #1e1e21; font-size: 12.5px;
+    width: max-content; min-width: 178px;
+    background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(245,246,250,.90));
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    border: 1px solid rgba(255,255,255,.85);
+    border-radius: 12px; padding: 5px;
+    box-shadow: 0 14px 40px rgba(26,28,38,.24), 0 2px 8px rgba(26,28,38,.14),
+                inset 0 1px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(0,0,0,.045);
+    color: #1c1c1f; font-size: 12.5px;
   }
+  /* 磨砂颗粒:一层极淡噪声,让玻璃有"磨砂"质感,不再干板一块 */
+  .menu::before {
+    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: .05; mix-blend-mode: overlay;
+  }
+  .menu > * { position: relative; z-index: 1; }   /* 行浮在颗粒之上 */
 
   .row { display: flex; align-items: center; gap: 7px;
     height: 28px; padding: 0 12px 0 7px; border-radius: 6px;
     white-space: nowrap; cursor: default; }
   .row[data-action] { cursor: pointer; }
-  .row[data-action]:hover { background: rgba(0, 0, 0, .055); }
+  .row[data-action]:hover { background: rgba(0, 0, 0, .06); }
 
-  /* 左列:只留一个 11px 的对勾位,尽量收窄 */
   .row .ck { flex: 0 0 11px; width: 11px; text-align: center;
     color: #12a150; font-size: 11px; opacity: 0; }
   .row.on .ck { opacity: 1; }
   .row .tx { flex: 1; }
-  .row .sc { margin-left: 16px; color: rgba(0, 0, 0, .4); font-size: 11px; letter-spacing: .2px; }
+  .row .sc { margin-left: 16px; color: rgba(0, 0, 0, .42); font-size: 11px; letter-spacing: .2px; }
 
-  .row.info { height: 24px; color: rgba(0, 0, 0, .42); }
+  .row.info { height: 24px; color: rgba(0, 0, 0, .48); }
   .row.info .tx { font-size: 11.5px; }
 
-  .sep { height: 1px; background: rgba(0, 0, 0, .08); margin: 4px 7px; }
+  .sep { height: 1px; background: rgba(0, 0, 0, .09); margin: 4px 7px; }
 
   .row.quit:hover { background: rgba(229, 72, 77, .92); color: #fff; }  /* 退出=危险动作,悬停变红 */
 
-  /* 深色:跟随系统主题(系统切到深色时整套换深) */
+  /* 深色:跟随系统主题 */
   @media (prefers-color-scheme: dark) {
     .menu {
-      background: rgba(32, 32, 35, .72);
-      border-color: rgba(255, 255, 255, .09);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .08);
-      color: rgba(255, 255, 255, .92);
+      background: linear-gradient(180deg, rgba(52,52,56,.86), rgba(38,38,42,.82));
+      border-color: rgba(255,255,255,.12);
+      box-shadow: 0 16px 44px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4),
+                  inset 0 1px 0 rgba(255,255,255,.10), inset 0 0 0 1px rgba(255,255,255,.03);
+      color: rgba(255,255,255,.94);
     }
-    .row[data-action]:hover { background: rgba(255, 255, 255, .10); }
+    .menu::before { opacity: .07; mix-blend-mode: soft-light; }
+    .row[data-action]:hover { background: rgba(255,255,255,.12); }
     .row .ck { color: #6bd39a; }
-    .row .sc { color: rgba(255, 255, 255, .4); }
-    .row.info { color: rgba(255, 255, 255, .45); }
-    .sep { background: rgba(255, 255, 255, .09); }
+    .row .sc { color: rgba(255,255,255,.42); }
+    .row.info { color: rgba(255,255,255,.5); }
+    .sep { background: rgba(255,255,255,.1); }
   }
 </style>
 </head>
@@ -75,7 +84,6 @@
   const PAD = 18;
   const card = document.querySelector('.menu');
 
-  // 量出卡片实际尺寸,回报主进程去定位 + 调窗口大小(这就是"自适应"—— 有多少内容占多大)
   function report() {
     const r = card.getBoundingClientRect();
     const cardW = Math.ceil(r.width), cardH = Math.ceil(r.height);
@@ -83,7 +91,6 @@
   }
   function setOn(id, on) { document.getElementById(id).classList.toggle('on', !!on); }
 
-  // 每次要弹之前,主进程把当前状态发来:填快捷键 + 打勾,量完再报尺寸
   ipcRenderer.on('menu-state', (e, s) => {
     document.getElementById('sc-annotate').textContent = s.annotateKey || '—';
     document.getElementById('sc-quit').textContent = s.quitKey || '—';

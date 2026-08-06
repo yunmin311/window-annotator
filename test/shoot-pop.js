@@ -1,5 +1,5 @@
-// 抓工具条"胶囊弹出"动画的几帧(用 animation-delay 负值 + paused 冻结在指定进度,确定性取帧),
-// 肉眼核对登场效果。用法: electron test/shoot-pop.js
+// 抓工具条"胶囊弹出"动画在真实经过时间上的几帧(reload=重放,sleep 后 capturePage),
+// 核对"肉眼能看见的展开"(不是一瞬间到位)。用法: electron test/shoot-pop.js
 'use strict';
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
@@ -7,8 +7,8 @@ const fs = require('fs');
 const OUT = process.env.SHOOT_OUT || __dirname;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const DUR = 0.4; // 秒,与 overlay.css 的 .36s 接近
-const html = (progress) => `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+// 动画与 overlay.css 的 toolbar-pop 保持一致(.52s + 同缓动)
+const HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
 body{width:100vw;height:100vh;overflow:hidden;position:relative;background:
   radial-gradient(560px 300px at 26% 30%, rgba(120,140,255,.30), transparent 60%),
@@ -16,16 +16,11 @@ body{width:100vw;height:100vh;overflow:hidden;position:relative;background:
   linear-gradient(135deg,#eef1f8,#e5ebf6)}
 #bar{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   display:flex;align-items:center;gap:6px;border-radius:999px;padding:12px 22px;overflow:hidden;
-  background:linear-gradient(180deg,rgba(44,44,49,.80),rgba(20,20,23,.90));
-  -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
-  border:1px solid rgba(255,255,255,.14);
+  background:linear-gradient(180deg,rgba(44,44,49,.80),rgba(20,20,23,.90));border:1px solid rgba(255,255,255,.14);
   box-shadow:0 14px 44px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.16);
-  animation:pop ${DUR}s cubic-bezier(.16,1,.3,1) forwards;
-  animation-delay:-${(progress * DUR).toFixed(3)}s;animation-play-state:paused}
-@keyframes pop{
-  0%{opacity:0;max-width:44px;transform:translate(-50%,-50%) scale(.96)}
-  55%{opacity:1}
-  100%{opacity:1;max-width:820px;transform:translate(-50%,-50%) scale(1)}}
+  animation:pop .5s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes pop{0%{opacity:0;max-width:46px;transform:translate(-50%,-50%) scale(.9)}
+  15%{opacity:1}100%{opacity:1;max-width:760px;transform:translate(-50%,-50%) scale(1)}}
 #bar .app{color:rgba(255,255,255,.55);font-size:13px;padding:0 6px;white-space:nowrap}
 #bar .sep{width:1px;height:22px;background:rgba(255,255,255,.20);margin:0 8px}
 #bar button{border:none;background:transparent;color:#f2f2f4;width:38px;height:38px;border-radius:50%;font-size:18px}
@@ -49,13 +44,14 @@ app.whenReady().then(async () => {
     width: 1000, height: 240, show: false, frame: false, transparent: true,
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
-  const progresses = [0.06, 0.16, 0.34, 0.60, 1.0];
-  for (let i = 0; i < progresses.length; i++) {
-    await w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html(progresses[i])));
-    await sleep(220);
+  const times = [70, 150, 260, 400];   // ms:动画约 520ms,这几帧应看到宽度逐步变大
+  for (let i = 0; i < times.length; i++) {
+    await w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(HTML)); // reload=重放动画
+    await sleep(times[i]);
+    const bw = await w.webContents.executeJavaScript('Math.round(document.getElementById("bar").getBoundingClientRect().width)');
     const img = await w.webContents.capturePage();
     fs.writeFileSync(path.join(OUT, 'pop-' + i + '.png'), img.toPNG());
-    console.log('saved pop-' + i + '.png @progress ' + progresses[i]);
+    console.log('t=' + times[i] + 'ms  bar width=' + bw);
   }
   app.exit(0);
 });

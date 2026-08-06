@@ -83,7 +83,7 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Write a handwritten note | Click `Aa` → cursor becomes a text caret → **click** on the window → a dashed box appears in place → type → click away or `Ctrl+Enter` to finish |
 | Move / edit an existing note | In annotate mode, **drag** to move, **double-click** to edit |
 | Erase a stroke | Pick the eraser, click or swipe over it |
-| Peek at what's under your marks | In annotate mode, scroll the wheel over empty canvas — up fades the marks, down restores them |
+| Fade marks (or zoom them) | In annotate mode, scroll the wheel over empty canvas — up fades, down restores; click the ◐ / 🔍 icon at the toolbar's left to switch the wheel to zoom |
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
 | Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |
 | Start on boot | Tray right-click → "开机自动启动" (Start on login) |
