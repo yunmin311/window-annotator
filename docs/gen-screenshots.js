@@ -35,7 +35,7 @@ text-shadow:0 1px 0 rgba(255,255,255,.6),0 -1px 0 rgba(255,255,255,.6),1px 0 0 r
 
 // 深色玻璃工具条(磨砂 + 顶部高光 + 分层阴影),和 overlay.css 里真实工具条同款质感
 const GLASS_BAR = `
-  background:linear-gradient(180deg,rgba(44,44,49,.80),rgba(20,20,23,.90));
+  background:linear-gradient(180deg,rgba(44,44,49,.70),rgba(20,20,23,.82));
   -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
   border:1px solid rgba(255,255,255,.14);
   box-shadow:0 14px 44px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.16);`;

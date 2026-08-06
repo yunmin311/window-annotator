@@ -22,7 +22,7 @@ body{width:100vw;height:100vh;overflow:hidden;position:relative;background:
   linear-gradient(135deg,#eef1f8,#e5ebf6)}
 #bar{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   display:flex;align-items:center;gap:5px;border-radius:999px;padding:11px 20px;overflow:hidden;
-  background:linear-gradient(180deg,rgba(44,44,49,.82),rgba(20,20,23,.92));
+  background:linear-gradient(180deg,rgba(44,44,49,.70),rgba(20,20,23,.82));
   border:1px solid rgba(255,255,255,.14);
   box-shadow:0 14px 40px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.16);
   animation:pop ${DUR}s cubic-bezier(.16,1,.3,1) forwards;

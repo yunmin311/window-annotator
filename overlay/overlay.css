@@ -86,7 +86,7 @@ body.view #ink-badge { display: none; }        /* 查看模式不调透明度,�
 #toolbar {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
   display: none; align-items: center; gap: 3px; overflow: hidden;
-  background: linear-gradient(180deg, rgba(44,44,49,.80), rgba(20,20,23,.90));
+  background: linear-gradient(180deg, rgba(44,44,49,.70), rgba(20,20,23,.82));
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 999px; padding: 5px 10px;
   -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
