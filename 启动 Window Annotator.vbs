@@ -1,3 +1,8 @@
-' 双击启动 Window Annotator(无终端窗口,后台驻留,看托盘红色 ✎ 图标)
+' Launch Window Annotator (no console window; runs in background; look for the red pen tray icon).
+' Uses the script's own folder, so there is no hardcoded drive/path -- works wherever the project lives.
+Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
-sh.Run """D:\window-annotator\node_modules\electron\dist\electron.exe"" ""D:\window-annotator""", 0, False
+dir = fso.GetParentFolderName(WScript.ScriptFullName)
+q = Chr(34)
+sh.CurrentDirectory = dir
+sh.Run q & dir & "\node_modules\electron\dist\electron.exe" & q & " " & q & dir & q, 0, False
