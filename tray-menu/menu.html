@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body { background: transparent; overflow: hidden;
+    font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
+  body { padding: 18px; }                 /* 窗口透明,四周留出阴影空间(与 tray-pos 的 pad 对齐) */
+
+  /* 卡片:和工具条/状态牌同一套"深色玻璃"语言,让菜单看着就是这个产品的一部分 */
+  .menu {
+    display: flex; flex-direction: column;
+    width: max-content; min-width: 208px;
+    background: rgba(30, 30, 33, .97);
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 11px; padding: 6px;
+    box-shadow: 0 14px 44px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+    color: rgba(255, 255, 255, .92); font-size: 13px;
+  }
+
+  .row { display: flex; align-items: center; gap: 8px;
+    height: 32px; padding: 0 14px 0 8px; border-radius: 7px;
+    white-space: nowrap; cursor: default; }
+  .row[data-action] { cursor: pointer; }
+  .row[data-action]:hover { background: rgba(255, 255, 255, .11); }
+
+  /* 左列只留一个窄窄的对勾位(~15px),而不是系统菜单那条又宽又空的勾选栏 */
+  .row .ck { flex: 0 0 15px; width: 15px; text-align: center;
+    color: #6bd39a; font-size: 12px; opacity: 0; }
+  .row.on .ck { opacity: 1; }
+  .row .tx { flex: 1; }
+  .row .sc { margin-left: 20px; color: rgba(255, 255, 255, .4);
+    font-size: 11.5px; letter-spacing: .2px; }
+
+  .row.info { height: 27px; color: rgba(255, 255, 255, .45); }
+  .row.info .tx { font-size: 12px; }
+
+  .sep { height: 1px; background: rgba(255, 255, 255, .09); margin: 5px 8px; }
+
+  .row.quit:hover { background: rgba(229, 72, 77, .9); color: #fff; }  /* 退出=危险动作,悬停变红 */
+</style>
+</head>
+<body>
+  <div class="menu">
+    <div class="row info"><span class="ck"></span><span class="tx">标注当前窗口</span><span class="sc" id="sc-annotate">—</span></div>
+    <div class="row info"><span class="ck"></span><span class="tx">退出程序</span><span class="sc" id="sc-quit">—</span></div>
+    <div class="sep"></div>
+    <div class="row" id="row-autostart" data-action="autostart"><span class="ck">✓</span><span class="tx">开机自动启动</span></div>
+    <div class="row" id="row-follow" data-action="follow"><span class="ck">✓</span><span class="tx">跟随页面滚动</span></div>
+    <div class="sep"></div>
+    <div class="row" data-action="open"><span class="ck"></span><span class="tx">打开标注存档文件夹</span></div>
+    <div class="row quit" data-action="quit"><span class="ck"></span><span class="tx">退出</span></div>
+  </div>
+
+<script>
+  const { ipcRenderer } = require('electron');
+  const PAD = 18;
+  const card = document.querySelector('.menu');
+
+  // 量出卡片实际尺寸,回报主进程去定位 + 调窗口大小(这就是"自适应"—— 有多少内容占多大)
+  function report() {
+    const r = card.getBoundingClientRect();
+    const cardW = Math.ceil(r.width), cardH = Math.ceil(r.height);
+    ipcRenderer.send('menu-size', { cardW, cardH, pad: PAD, winW: cardW + 2 * PAD, winH: cardH + 2 * PAD });
+  }
+  function setOn(id, on) { document.getElementById(id).classList.toggle('on', !!on); }
+
+  // 每次要弹之前,主进程把当前状态发来:填快捷键 + 打勾,量完再报尺寸
+  ipcRenderer.on('menu-state', (e, s) => {
+    document.getElementById('sc-annotate').textContent = s.annotateKey || '—';
+    document.getElementById('sc-quit').textContent = s.quitKey || '—';
+    setOn('row-autostart', s.autostart);
+    setOn('row-follow', s.follow);
+    requestAnimationFrame(report);
+  });
+
+  document.body.addEventListener('click', (ev) => {
+    const row = ev.target.closest('[data-action]');
+    if (row) ipcRenderer.send('tray-action', row.dataset.action);
+  });
+  window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ipcRenderer.send('tray-action', 'close'); });
+</script>
+</body>
+</html>
