@@ -69,20 +69,24 @@ body.draw #chip { display: none; }
 body.draw #bind-badge { display: none; }       /* 画笔模式不谈跟随,不显示 */
 @media (prefers-reduced-motion: reduce) { #bind-badge { transition: opacity .28s ease; } }
 
-/* 工具条 */
+/* 工具条:深色玻璃胶囊(磨砂 + 顶部高光 + 分层阴影,比原来单色底更有质感) */
 #toolbar {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-  display: none; align-items: center; gap: 3px;
-  background: rgba(24,24,27,.92); border: 1px solid rgba(255,255,255,.08);
+  display: none; align-items: center; gap: 3px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(44,44,49,.80), rgba(20,20,23,.90));
+  border: 1px solid rgba(255,255,255,.12);
   border-radius: 999px; padding: 5px 10px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 8px 28px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.14);
   font-family: 'Segoe UI', system-ui, sans-serif;
 }
-/* 进入标注模式时,工具条轻轻落下(淡入+下滑+微放大),参考 Typeless 的柔和登场 */
-body.draw #toolbar { display: flex; animation: toolbar-in .24s cubic-bezier(.16,1,.3,1); }
-@keyframes toolbar-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.97); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
+/* 进入标注模式:从一个小胶囊"弹开"成整条 —— 因为整条一直 translateX(-50%) 居中,
+   max-width 逐帧变宽时会被重新居中,看起来就是从中间向两边"啵"地展开(Typeless 那种登场) */
+body.draw #toolbar { display: flex; animation: toolbar-pop .36s cubic-bezier(.16,1,.3,1); }
+@keyframes toolbar-pop {
+  0%   { opacity: 0; max-width: 42px;  transform: translateX(-50%) translateY(-6px) scale(.96); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; max-width: 760px; transform: translateX(-50%) translateY(0)    scale(1); }
 }
 #app-name { color: rgba(255,255,255,.45); font-size: 12px; padding: 0 4px; max-width: 120px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

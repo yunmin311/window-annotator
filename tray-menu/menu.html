@@ -8,37 +8,54 @@
     font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   body { padding: 18px; }                 /* 窗口透明,四周留出阴影空间(与 tray-pos 的 pad 对齐) */
 
-  /* 卡片:和工具条/状态牌同一套"深色玻璃"语言,让菜单看着就是这个产品的一部分 */
+  /* 卡片:磨砂玻璃,浅色为默认、深色跟随系统(见底部 @media)。比上一版更小、左列更窄 */
   .menu {
     display: flex; flex-direction: column;
-    width: max-content; min-width: 208px;
-    background: rgba(30, 30, 33, .97);
-    border: 1px solid rgba(255, 255, 255, .09);
-    border-radius: 11px; padding: 6px;
-    box-shadow: 0 14px 44px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
-    color: rgba(255, 255, 255, .92); font-size: 13px;
+    width: max-content; min-width: 174px;
+    background: rgba(250, 250, 251, .80);
+    -webkit-backdrop-filter: blur(26px) saturate(1.7);
+    backdrop-filter: blur(26px) saturate(1.7);
+    border: 1px solid rgba(0, 0, 0, .07);
+    border-radius: 10px; padding: 5px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, .18), 0 1px 2px rgba(0, 0, 0, .10),
+                inset 0 1px 0 rgba(255, 255, 255, .8);
+    color: #1e1e21; font-size: 12.5px;
   }
 
-  .row { display: flex; align-items: center; gap: 8px;
-    height: 32px; padding: 0 14px 0 8px; border-radius: 7px;
+  .row { display: flex; align-items: center; gap: 7px;
+    height: 28px; padding: 0 12px 0 7px; border-radius: 6px;
     white-space: nowrap; cursor: default; }
   .row[data-action] { cursor: pointer; }
-  .row[data-action]:hover { background: rgba(255, 255, 255, .11); }
+  .row[data-action]:hover { background: rgba(0, 0, 0, .055); }
 
-  /* 左列只留一个窄窄的对勾位(~15px),而不是系统菜单那条又宽又空的勾选栏 */
-  .row .ck { flex: 0 0 15px; width: 15px; text-align: center;
-    color: #6bd39a; font-size: 12px; opacity: 0; }
+  /* 左列:只留一个 11px 的对勾位,尽量收窄 */
+  .row .ck { flex: 0 0 11px; width: 11px; text-align: center;
+    color: #12a150; font-size: 11px; opacity: 0; }
   .row.on .ck { opacity: 1; }
   .row .tx { flex: 1; }
-  .row .sc { margin-left: 20px; color: rgba(255, 255, 255, .4);
-    font-size: 11.5px; letter-spacing: .2px; }
+  .row .sc { margin-left: 16px; color: rgba(0, 0, 0, .4); font-size: 11px; letter-spacing: .2px; }
 
-  .row.info { height: 27px; color: rgba(255, 255, 255, .45); }
-  .row.info .tx { font-size: 12px; }
+  .row.info { height: 24px; color: rgba(0, 0, 0, .42); }
+  .row.info .tx { font-size: 11.5px; }
 
-  .sep { height: 1px; background: rgba(255, 255, 255, .09); margin: 5px 8px; }
+  .sep { height: 1px; background: rgba(0, 0, 0, .08); margin: 4px 7px; }
 
-  .row.quit:hover { background: rgba(229, 72, 77, .9); color: #fff; }  /* 退出=危险动作,悬停变红 */
+  .row.quit:hover { background: rgba(229, 72, 77, .92); color: #fff; }  /* 退出=危险动作,悬停变红 */
+
+  /* 深色:跟随系统主题(系统切到深色时整套换深) */
+  @media (prefers-color-scheme: dark) {
+    .menu {
+      background: rgba(32, 32, 35, .72);
+      border-color: rgba(255, 255, 255, .09);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .08);
+      color: rgba(255, 255, 255, .92);
+    }
+    .row[data-action]:hover { background: rgba(255, 255, 255, .10); }
+    .row .ck { color: #6bd39a; }
+    .row .sc { color: rgba(255, 255, 255, .4); }
+    .row.info { color: rgba(255, 255, 255, .45); }
+    .sep { background: rgba(255, 255, 255, .09); }
+  }
 </style>
 </head>
 <body>
