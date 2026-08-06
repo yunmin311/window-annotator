@@ -69,6 +69,19 @@ body.draw #chip { display: none; }
 body.draw #bind-badge { display: none; }       /* 画笔模式不谈跟随,不显示 */
 @media (prefers-reduced-motion: reduce) { #bind-badge { transition: opacity .28s ease; } }
 
+/* 透明度提示牌:画笔模式滚轮调标注透明度时,顶部工具条下方短暂显示"标注 60%" */
+#ink-badge {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%);
+  pointer-events: none; z-index: 6;
+  padding: 4px 11px; border-radius: 999px;
+  font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11.5px; line-height: 1;
+  color: rgba(255,255,255,.92); background: rgba(24,24,27,.9);
+  border: 1px solid rgba(255,255,255,.1); box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  opacity: 0; transition: opacity .18s ease;
+}
+#ink-badge.show { opacity: .95; }
+body.view #ink-badge { display: none; }        /* 查看模式不调透明度,不显示 */
+
 /* 工具条:深色玻璃胶囊(磨砂 + 顶部高光 + 分层阴影,比原来单色底更有质感) */
 #toolbar {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
