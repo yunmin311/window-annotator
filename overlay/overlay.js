@@ -481,6 +481,29 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') undo();
 });
 
+// 滚轮调标注透明度:画笔模式下,在空白处滚轮让"标注层"淡入淡出 —— 在「看标注」和「看清下面窗口」
+// 之间来回切换(参考 PixPin 贴图的透明度)。悬在便签上滚是改字号(见上,那里 stopPropagation,走不到这)。
+// 上滚变淡、下滚变实;只动标注层(笔迹 + 便签),工具条 / 描边不动,随时还能操作。
+let inkOpacity = 1;
+let inkBadgeTimer = null;
+const inkBadge = document.getElementById('ink-badge');
+function applyInkOpacity(show) {
+  svg.style.opacity = inkOpacity;
+  notesLayer.style.opacity = inkOpacity;
+  if (show && inkBadge) {
+    inkBadge.textContent = '标注 ' + Math.round(inkOpacity * 100) + '%';
+    inkBadge.classList.add('show');
+    clearTimeout(inkBadgeTimer);
+    inkBadgeTimer = setTimeout(() => inkBadge.classList.remove('show'), 900);
+  }
+}
+window.addEventListener('wheel', (e) => {
+  if (mode !== 'draw') return;
+  e.preventDefault();
+  inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
+  applyInkOpacity(true);
+}, { passive: false });
+
 /* ---------- 工具条 ---------- */
 
 const CURSORS = { note: 'text', eraser: 'cell' };
@@ -553,6 +576,7 @@ ipcRenderer.on('init', (e, data) => {
 ipcRenderer.on('mode', (e, m) => {
   mode = m;
   document.body.className = m + (items.length ? ' has-items' : '') + (tool === 'note' ? ' tool-note' : '');
+  inkOpacity = 1; applyInkOpacity(false); // 换模式复位:标注恢复不透明(别把上次滚淡的状态带过来)
   if (m === 'view' && drawing) drawing = null;
   if (m === 'view') clearNoteSelection();
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
