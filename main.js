@@ -247,7 +247,7 @@ function buildTrayMenu() {
     { type: 'separator' },
     { label: '开机自动启动', type: 'checkbox', checked: isAutoStart(),
       click: (mi) => { setAutoStart(mi.checked); } },
-    { label: '跟随页面滚动(浏览器/PDF/笔记等;读不到就钉在窗口上)', type: 'checkbox', checked: scrollFollow,
+    { label: '跟随页面滚动', type: 'checkbox', checked: scrollFollow,
       click: (mi) => {
         scrollFollow = mi.checked;
         settings.set('scrollFollow', mi.checked);

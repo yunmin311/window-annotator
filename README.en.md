@@ -40,11 +40,11 @@ draw on it. All code is an independent implementation.
 |---|---|
 | 🪟 **On any window** | Browser, PDF, chat, editor… if it's a window, you can mark it up |
 | 🎯 **Marks follow the window** | Move or resize the window and annotations track it in real time — not a frozen screenshot |
-| 📜 **Follows page scrolling** | Scroll the page and marks scroll with it (direction exact, magnitude tunable — see [FAQ](#-faq)) |
+| 📜 **Follows page scrolling** | Scroll and marks track the real scroll position — main content and sidebar each followed on their own; apps that don't expose scrolling fall back to pinning (see [FAQ](#-faq)) |
 | ✏️ **Five hand-drawn tools** | Pen, hand-drawn arrow, highlighter, handwritten note, eraser — six colors |
 | 💾 **Remembers automatically** | Saved per "app + window title"; close and reopen the window, the marks come back |
 | 🫥 **Stays out of your way** | One tap and the overlay becomes click-through — keep using the window underneath |
-| 🔔 **Lives in the tray** | A red ✎ icon; auto-start and scroll sensitivity are in the right-click menu |
+| 🔔 **Lives in the tray** | A red ✎ icon; auto-start and the follow toggle are in the right-click menu |
 | 🀄 **No licensing baggage** | Handwriting uses fonts built into Windows; no third-party assets bundled |
 
 ## Screenshots
@@ -53,7 +53,7 @@ draw on it. All code is an independent implementation.
 
 <img src="docs/toolbar.png" alt="Floating toolbar" width="640">
 
-**The tray right-click menu** (auto-start and scroll sensitivity live here):
+**The tray right-click menu** (auto-start and the follow toggle live here):
 
 <img src="docs/tray.png" alt="Tray menu" width="380">
 
@@ -84,7 +84,7 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Move / edit an existing note | In annotate mode, **drag** to move, **double-click** to edit |
 | Erase a stroke | Pick the eraser, click or swipe over it |
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
-| Tune scroll follow speed | Tray right-click → "滚动跟随灵敏度" (Scroll sensitivity) → Slow / Normal / Fast |
+| Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |
 | Start on boot | Tray right-click → "开机自动启动" (Start on login) |
 | Quit the app | `Ctrl+Alt+Q`, or tray right-click → "退出" (Quit) |
 
@@ -96,16 +96,22 @@ If it's running and still nothing happens, `Ctrl+Alt+A` is probably taken by ano
 (**it's the default screenshot hotkey for QQ**). In that case the app auto-falls back to `Ctrl+Alt+W`,
 then `Ctrl+Shift+Alt+A` — the startup notification and tray tooltip tell you which one is live.
 
-**Why is "follows scrolling" sometimes slightly off?**
-Because this is an **overlay on top of a window it doesn't own** — it can't read how far the browser/PDF
-has scrolled internally. So it intercepts your mouse wheel at the system level and converts "N wheel
-notches" into pixels to shift the marks: **the direction is always right, but the magnitude is an
-estimate** — different apps scroll a different number of pixels per notch. If the marks drift faster or
-slower than the content, nudge the "Scroll sensitivity" one step in the tray.
+**Why do some apps follow scrolling and others don't?**
+Scroll-follow reads *where the target window is currently scrolled* through Windows' **accessibility API
+(UI Automation)**. When it can read that, marks **track the real position precisely** — browsers, PDFs, and
+most note apps work, and it can even tell the main content area from a sidebar so each mark follows the pane
+it was drawn on. But **some apps don't expose their scroll position to accessibility**, and those can't be
+followed yet — the marks fall back to being pinned to the window (move / resize still track):
+
+- Editors like **VS Code and Obsidian** use *virtual scrolling* (only the visible lines are rendered), so there's no scroll value to read;
+- **ChatGPT's conversation area** — same story: that long message stream is virtually scrolled;
+- A few fully custom-drawn UIs may also be unreadable.
+
+> This is an area of **ongoing compatibility work**: every app whose scrolling we learn to read is one more that follows precisely. Unreadable ones degrade gracefully to window-pinning — no jumping around.
 
 **Does it slow down my PC?**
-In the background it does one very cheap thing: realign the overlay every 16 ms. When you're not
-annotating, it costs almost nothing.
+In the background it does one very cheap thing: realign the overlay every 16 ms — and it only reads scroll
+position when a window that actually has annotations is in the foreground. When you're not annotating, it costs almost nothing.
 
 ## 🔧 How it works
 
@@ -126,8 +132,10 @@ Three layers:
 3. **Annotation canvas** (`overlay/`): a transparent, always-on-top window.
    - View mode is fully **click-through** (`setIgnoreMouseEvents + forward`), grabbing the mouse only when you hover the corner ✎;
    - The **hand-drawn look** comes from seeded jitter — each mark stores a seed so the wobble stays identical on redraw;
-   - **Scroll-follow** uses a `WH_MOUSE_LL` low-level mouse hook to capture wheel deltas at the system level and
-     shift marks per frame. Marks are stored in "content coordinates" (window coords at scroll = 0), so the whole layer moves consistently.
+   - **Scroll-follow** reads the target window's **real scroll position** via the accessibility API
+     (UI Automation's ScrollPattern) and shifts marks by the matching pixel offset. Multiple scrollable
+     regions on a page (main content, sidebar…) are detected separately, and **each mark follows only the
+     region it was drawn on**, clipped when it scrolls out of that region. Apps that don't expose scrolling fall back to window-pinning.
 
 Annotations live in `data/annotations.json`, keyed by `app|window-title`; auto-start is delegated to the OS login item.
 
@@ -137,10 +145,10 @@ Annotations live in `data/annotations.json`, keyed by `app|window-title`; auto-s
 
 This is a working MVP. Current trade-offs, and where the polish is headed:
 
-- **Scroll-follow is an estimate**: direction is exact, magnitude is dialed in via the sensitivity presets — not pixel-perfect.
-- **Marks don't scale on window resize**: move/scroll follow works, but resizing the window won't scale the marks.
+- **Scroll-follow depends on the app**: apps that expose their scroll position (browsers / PDF / most note apps) are followed precisely — main content and sidebar separately; ones that don't (VS Code / Obsidian / ChatGPT's chat area and other virtual-scroll UIs) fall back to window-pinning. **More apps are being adapted over time.**
+- **Marks don't scale on window resize**: move / scroll follow works, but resizing the window won't scale the marks.
 - **Marks hide when the target isn't foreground**: the stability that buys us the z-order trick; if that window scrolled while away, there'll be an offset on return.
-- **Archived by window title**: switching browser tabs (title changes) is treated as a different window.
+- **Archived by window title**: the upside is **switching browser tabs auto-swaps to that tab's marks** (no bleed across tabs); the cost is that two pages with the exact same title share one set.
 - Next up: **fluidity** (tighter tracking) and **visual polish**.
 
 ## 🙏 Credits
