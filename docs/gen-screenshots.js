@@ -8,19 +8,21 @@ const fs = require('fs');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT = __dirname;
 
-// ---- 与 overlay.js 一致的手绘渲染(截图独立副本) ----
+// ---- 与 overlay.js 一致的手绘渲染(截图独立副本;含方框 rect) ----
 const RENDER = `
 const COLORS = { neutral:'#3d3d40', red:'#e5484d', amber:'#ee9d2b', green:'#2f9e63', blue:'#0e8fd8', purple:'#8e4ec6' };
 function mulberry32(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
 function sketchSegment(x1,y1,x2,y2,rnd,bowScale=0.045){const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len,parts=[];for(let p=0;p<2;p++){const bow=(rnd()-0.5)*2*Math.min(9,len*bowScale),j=()=>(rnd()-0.5)*2.4,mx=x1+dx*(0.4+rnd()*0.2)+nx*bow+j(),my=y1+dy*(0.4+rnd()*0.2)+ny*bow+j();parts.push('M'+(x1+j())+' '+(y1+j())+' Q'+mx+' '+my+' '+(x2+j())+' '+(y2+j()));}return parts.join(' ');}
 function arrowPath(it){const[x1,y1]=it.from,[x2,y2]=it.to,rnd=mulberry32(it.seed),dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy)||1,ang=Math.atan2(dy,dx),h=Math.min(16,8+len*0.12);let d=sketchSegment(x1,y1,x2,y2,rnd);for(const s of[-1,1]){const a=ang+Math.PI+s*0.46+(rnd()-0.5)*0.1;d+=' '+sketchSegment(x2,y2,x2+Math.cos(a)*h,y2+Math.sin(a)*h,rnd,0.1);}return d;}
+function rectPath(it){const[x1,y1]=it.from,[x2,y2]=it.to,ax=Math.min(x1,x2),ay=Math.min(y1,y2),bx=Math.max(x1,x2),by=Math.max(y1,y2),rnd=mulberry32(it.seed),seg=(a,b,c,d)=>sketchSegment(a,b,c,d,rnd,0.02);return[seg(ax,ay,bx,ay),seg(bx,ay,bx,by),seg(bx,by,ax,by),seg(ax,by,ax,ay)].join(' ');}
 function smoothPath(pts){if(pts.length<2){const[x,y]=pts[0];return 'M'+x+' '+y+' l0.01 0';}let d='M'+pts[0][0]+' '+pts[0][1];for(let i=1;i<pts.length-1;i++){const mx=(pts[i][0]+pts[i+1][0])/2,my=(pts[i][1]+pts[i+1][1])/2;d+=' Q'+pts[i][0]+' '+pts[i][1]+' '+mx+' '+my;}const l=pts[pts.length-1];d+=' L'+l[0]+' '+l[1];return d;}
 function render(items){const ink=document.getElementById('ink-layer'),hl=document.getElementById('hl-layer'),notes=document.getElementById('notes');
 for(const it of items){if(it.type==='note'){const div=document.createElement('div');div.className='note';div.style.left=it.x+'px';div.style.top=it.y+'px';div.style.color=COLORS[it.color];div.style.transform='rotate('+it.rot+'deg)';div.textContent=it.text;notes.appendChild(div);continue;}
 const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('stroke',COLORS[it.color]);p.setAttribute('fill','none');p.setAttribute('stroke-linecap','round');p.setAttribute('stroke-linejoin','round');
 if(it.type==='pen'){p.setAttribute('d',smoothPath(it.points));p.setAttribute('stroke-width',2.6);ink.appendChild(p);}
 else if(it.type==='hl'){p.setAttribute('d',smoothPath(it.points));p.setAttribute('stroke-width',16);p.setAttribute('stroke-linecap','butt');p.style.opacity='.38';p.style.mixBlendMode='multiply';hl.appendChild(p);}
-else if(it.type==='arrow'){p.setAttribute('d',arrowPath(it));p.setAttribute('stroke-width',2.4);ink.appendChild(p);}}}
+else if(it.type==='arrow'){p.setAttribute('d',arrowPath(it));p.setAttribute('stroke-width',2.4);ink.appendChild(p);}
+else if(it.type==='rect'){p.setAttribute('d',rectPath(it));p.setAttribute('stroke-width',2.4);ink.appendChild(p);}}}
 `;
 
 const NOTE_CSS = `
@@ -30,12 +32,12 @@ text-shadow:0 1px 0 rgba(255,255,255,.6),0 -1px 0 rgba(255,255,255,.6),1px 0 0 r
 #notes{position:absolute;inset:0}
 `;
 
-// 模拟"浏览器窗口 + 一篇文章",再叠标注——展示"任意窗口都能标"
+// 模拟"浏览器窗口 + 一篇文章",再叠标注——展示"任意窗口都能标"。工具条=当前真实的六个工具(含方框 ▭)
 function heroHTML(withToolbar) {
   const toolbar = withToolbar ? `
   <div class="wa-toolbar">
     <span class="app">chrome</span><span class="sep"></span>
-    <button>✏️</button><button class="on">↗</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
+    <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
     <span class="sep"></span><button>↶</button><button>🗑</button><b>完成</b>
@@ -87,6 +89,8 @@ function heroHTML(withToolbar) {
     <script>${RENDER}
     function circle(cx,cy,r){const pts=[];for(let a=-0.3;a<Math.PI*2+0.3;a+=0.25){pts.push([cx+Math.cos(a)*r*1.25,cy+Math.sin(a)*r]);}return pts;}
     render([
+      // 方框:框住标题(展示新的"方框"工具)
+      {type:'rect',color:'purple',from:[120,142],to:[300,190],seed:11},
       // 荧光笔划在"环比上升 34%"上
       {type:'hl',color:'amber',points:[[313,257],[372,258],[430,257]]},
       // 绿色圈住"41%"
@@ -100,11 +104,11 @@ function heroHTML(withToolbar) {
   </body></html>`;
 }
 
-// 工具条特写(柔和背景 + 放大的工具条)
+// 工具条特写(柔和背景 + 放大的工具条),六个工具:画笔 / 箭头 / 方框 / 荧光笔 / 手写便签 / 橡皮
 function toolbarHTML() {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
-  body{width:920px;height:200px;background:linear-gradient(135deg,#f6f7fb,#e9edf5);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  body{width:960px;height:200px;background:linear-gradient(135deg,#f6f7fb,#e9edf5);display:flex;align-items:center;justify-content:center;overflow:hidden}
   .bar{display:flex;align-items:center;gap:6px;background:rgba(24,24,27,.96);border:1px solid rgba(255,255,255,.08);
     border-radius:999px;padding:12px 22px;box-shadow:0 18px 50px rgba(0,0,0,.4);transform:scale(1.3)}
   .bar .app{color:rgba(255,255,255,.45);font-size:13px;padding:0 6px}
@@ -122,6 +126,7 @@ function toolbarHTML() {
       <span class="app">当前窗口</span><span class="sep"></span>
       <button title="画笔">✏️<span class="tip">画笔</span></button>
       <button class="on" title="箭头">↗</button>
+      <button title="方框">▭</button>
       <button title="荧光笔">▆</button>
       <button class="ink" title="手写便签">Aa</button>
       <button title="橡皮">⌫</button>
@@ -133,31 +138,35 @@ function toolbarHTML() {
   </body></html>`;
 }
 
-// 托盘右键菜单 mock(展示开机自启 + 滚动灵敏度)
+// 托盘右键菜单 mock —— 现在是自绘的深色玻璃菜单(和工具条同语言),开机自启 / 跟随页面滚动 两个勾选项
 function trayHTML() {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
   body{width:520px;height:400px;background:linear-gradient(135deg,#eef1f6,#dfe4ee);position:relative}
   .taskbar{position:absolute;bottom:0;left:0;right:0;height:48px;background:rgba(243,244,246,.96);border-top:1px solid #e2e5ea;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;gap:16px;color:#4b5563;font-size:13px}
   .trayicon{width:26px;height:26px;border-radius:50%;background:#e5484d;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 0 3px rgba(229,72,77,.18)}
-  .menu{position:absolute;right:18px;bottom:60px;width:260px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;
-    box-shadow:0 20px 50px rgba(20,30,60,.24);padding:6px;font-size:13.5px;color:#1f2937}
-  .menu .row{padding:8px 12px;border-radius:6px;display:flex;align-items:center;gap:9px}
-  .menu .row.dim{color:#9aa1ab}
-  .menu .row.hover{background:#eef4ff}
-  .menu .check{color:#2f9e63;width:14px}
-  .menu .arrow{margin-left:auto;color:#9aa1ab}
-  .menu .hr{height:1px;background:#eef0f3;margin:5px 4px}
+  .menu{position:absolute;right:22px;bottom:60px;display:flex;flex-direction:column;min-width:210px;
+    background:rgba(30,30,33,.97);border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:6px;
+    box-shadow:0 14px 44px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);color:rgba(255,255,255,.92);font-size:13px}
+  .row{display:flex;align-items:center;gap:8px;height:32px;padding:0 14px 0 8px;border-radius:7px;white-space:nowrap}
+  .row .ck{flex:0 0 15px;width:15px;text-align:center;color:#6bd39a;font-size:12px;opacity:0}
+  .row.on .ck{opacity:1}
+  .row .tx{flex:1}
+  .row .sc{margin-left:20px;color:rgba(255,255,255,.4);font-size:11.5px}
+  .row.info{height:27px;color:rgba(255,255,255,.45)}
+  .row.info .tx{font-size:12px}
+  .row.hover{background:rgba(255,255,255,.11)}
+  .sep{height:1px;background:rgba(255,255,255,.09);margin:5px 8px}
   </style></head><body>
     <div class="menu">
-      <div class="row dim">标注当前窗口:Ctrl+Alt+A</div>
-      <div class="row dim">退出程序:Ctrl+Alt+Q</div>
-      <div class="hr"></div>
-      <div class="row hover"><span class="check">✓</span>开机自动启动</div>
-      <div class="row">滚动跟随灵敏度<span class="arrow">▸</span></div>
-      <div class="hr"></div>
-      <div class="row">打开标注存档文件夹</div>
-      <div class="row">退出</div>
+      <div class="row info"><span class="ck"></span><span class="tx">标注当前窗口</span><span class="sc">Ctrl+Alt+A</span></div>
+      <div class="row info"><span class="ck"></span><span class="tx">退出程序</span><span class="sc">Ctrl+Alt+Q</span></div>
+      <div class="sep"></div>
+      <div class="row on"><span class="ck">✓</span><span class="tx">开机自动启动</span></div>
+      <div class="row on hover"><span class="ck">✓</span><span class="tx">跟随页面滚动</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="ck"></span><span class="tx">打开标注存档文件夹</span></div>
+      <div class="row"><span class="ck"></span><span class="tx">退出</span></div>
     </div>
     <div class="taskbar"><div class="trayicon">✎</div><span>16:42</span></div>
   </body></html>`;
@@ -181,7 +190,7 @@ app.whenReady().then(async () => {
   await shoot(hero, heroHTML(true), 'hero.png');
   hero.close();
 
-  const bar = mk(920, 200);
+  const bar = mk(960, 200);
   await shoot(bar, toolbarHTML(), 'toolbar.png');
   bar.close();
 

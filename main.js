@@ -9,6 +9,7 @@ const store = require('./src/store');
 const settings = require('./src/settings');
 const scrollUia = require('./src/scroll-uia');
 const regions = require('./src/regions');
+const trayPos = require('./src/tray-pos');
 
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
 // 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
@@ -238,7 +239,12 @@ function setAutoStart(on) {
 
 let tray = null;
 let trayKeys = { annotateKey: null, quitKey: null };
+let menuWin = null;        // 自绘的托盘右键菜单(透明置顶小窗,深色玻璃,自适应内容)
+let pendingCursor = null;  // 右键那一刻的光标屏幕坐标,等菜单量完尺寸再据此定位
 
+const fmtKey = (k) => (k ? k.replace(/Control/g, 'Ctrl') : '—');
+
+// 原生菜单只作兜底(自绘菜单没就绪时用);平时走 showTrayMenu 的自绘版
 function buildTrayMenu() {
   const { annotateKey, quitKey } = trayKeys;
   return Menu.buildFromTemplate([
@@ -252,7 +258,6 @@ function buildTrayMenu() {
         scrollFollow = mi.checked;
         settings.set('scrollFollow', mi.checked);
         syncReader();
-        tray.setContextMenu(buildTrayMenu());
       } },
     { type: 'separator' },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
@@ -260,12 +265,61 @@ function buildTrayMenu() {
   ]);
 }
 
+// 自绘菜单窗口:透明、无边框、置顶、跳过任务栏;开机就建好(藏着),右键时填状态再弹,避免首弹卡顿
+function createTrayMenuWindow() {
+  const w = new BrowserWindow({
+    width: 320, height: 340, show: false, frame: false, transparent: true,
+    resizable: false, movable: false, minimizable: false, maximizable: false,
+    skipTaskbar: true, hasShadow: false, fullscreenable: false, type: 'toolbar',
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+  });
+  w.setAlwaysOnTop(true, 'screen-saver');
+  w.setMenu(null);
+  w.loadFile(path.join(__dirname, 'tray-menu', 'menu.html'));
+  w.on('blur', () => { if (!w.isDestroyed() && w.isVisible()) w.hide(); }); // 点别处即收
+  return w;
+}
+
+// 弹菜单:记下光标,把当前状态发给菜单;菜单量完尺寸回 'menu-size',那边再定位+显示
+function showTrayMenu() {
+  if (!menuWin || menuWin.isDestroyed() || !menuWin.webContents || menuWin.webContents.isLoading()) {
+    try { tray.popUpContextMenu(buildTrayMenu()); } catch { /* 兜底也失败就算了 */ }
+    return;
+  }
+  pendingCursor = screen.getCursorScreenPoint();
+  menuWin.webContents.send('menu-state', {
+    autostart: isAutoStart(), follow: scrollFollow,
+    annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
+  });
+}
+
+ipcMain.on('menu-size', (e, size) => {
+  if (!menuWin || e.sender !== menuWin.webContents) return;
+  const cur = pendingCursor || screen.getCursorScreenPoint();
+  const wa = screen.getDisplayNearestPoint(cur).workArea;
+  const { x, y } = trayPos.menuPosition(cur, size, wa);
+  menuWin.setBounds({ x, y, width: size.winW, height: size.winH });
+  menuWin.show();
+  menuWin.focus();          // 拿到焦点才能靠 blur 收起
+});
+
+ipcMain.on('tray-action', (e, action) => {
+  if (menuWin && e.sender === menuWin.webContents && menuWin.isVisible()) menuWin.hide();
+  if (action === 'autostart') setAutoStart(!isAutoStart());
+  else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
+  else if (action === 'open') shell.openPath(path.join(__dirname, 'data'));
+  else if (action === 'quit') app.quit();
+  // 'close'(按 Esc):已经 hide,别的什么都不做
+});
+
 function createTray(annotateKey, quitKey) {
   trayKeys = { annotateKey, quitKey };
   const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon);
-  tray.setToolTip(`Window Annotator — 标注:${annotateKey ? annotateKey.replace(/Control/g, 'Ctrl') : '快捷键注册失败'}`);
-  tray.setContextMenu(buildTrayMenu());
+  tray.setToolTip(`Window Annotator — 标注:${annotateKey ? fmtKey(annotateKey) : '快捷键注册失败'}`);
+  menuWin = createTrayMenuWindow();
+  tray.on('right-click', showTrayMenu);
+  tray.on('click', showTrayMenu);   // 左键也弹,没有别的主动作,省得找
 }
 
 if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
