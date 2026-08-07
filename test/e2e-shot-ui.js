@@ -10,7 +10,7 @@ const RESULT = path.join(OUT, 'shotui-result.txt');
 try { fs.writeFileSync(RESULT, 'shotui start\n'); } catch {}
 const logf = (s) => { try { fs.appendFileSync(RESULT, s + '\n'); } catch {} console.log(s); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-setTimeout(() => { logf('TIMEOUT'); app.exit(2); }, 20000);
+setTimeout(() => { logf('TIMEOUT'); app.exit(2); }, 25000);
 
 app.whenReady().then(async () => {
   let fails = 0;
@@ -46,6 +46,14 @@ app.whenReady().then(async () => {
   await sleep(120);
   check('失败也复原', !(await js('document.body.classList.contains("shooting")')));
   check('弹出"截图失败"提示', await js('/失败/.test(document.getElementById("shot-toast").textContent)'));
+
+  // —— 兜底超时:主进程完全不回话(挂了/被杀),2.5s 后也必须把胶囊放回来 ——
+  await js('document.getElementById("shot").click(); true;');
+  check('点 📷 后进入 shooting', await js('document.body.classList.contains("shooting")'));
+  await sleep(2800);   // 不发任何 capture-result,等兜底超时(2.5s)兜住
+  check('无响应时兜底超时撤销 shooting(胶囊必回来)', !(await js('document.body.classList.contains("shooting")')));
+  check('工具条恢复可见', await js('getComputedStyle(document.getElementById("toolbar")).visibility !== "hidden"'));
+  check('兜底提示"没有响应"', await js('/没有响应/.test(document.getElementById("shot-toast").textContent)'));
 
   logf(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
   app.exit(fails === 0 ? 0 : 1);
