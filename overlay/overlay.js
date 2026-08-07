@@ -510,7 +510,7 @@ function applyInk(showBadge) {
 function setWheelMode(m) {
   wheelMode = m;
   if (!wheelModeBtn) return;
-  wheelModeBtn.textContent = m === 'zoom' ? '🔍' : '◐';
+  wheelModeBtn.textContent = m === 'zoom' ? '🔍' : '◧';
   wheelModeBtn.title = m === 'zoom'
     ? '滚轮 = 缩放标注(点击 / 右键切成透明度)'
     : '滚轮 = 标注透明度(点击 / 右键切成缩放)';
