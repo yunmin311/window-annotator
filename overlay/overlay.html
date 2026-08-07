@@ -23,6 +23,9 @@
   <!-- 透明度提示:画笔模式下滚轮调标注透明度时,短暂显示"标注 60%" -->
   <div id="ink-badge"></div>
 
+  <!-- 截图完成提示:点 📷 截完窗口(含标注)后短暂显示"已复制到剪贴板" -->
+  <div id="shot-toast"></div>
+
   <!-- 标注模式工具条 -->
   <div id="toolbar" class="hoverable">
     <div id="tool-ink"></div><!-- 滑动的高亮胶囊:在工具间平滑滑动,指示当前工具 -->
@@ -38,6 +41,7 @@
     <span class="sep"></span>
     <span id="colors"></span>
     <span class="sep"></span>
+    <button id="shot"  title="截图当前窗口(含标注),复制到剪贴板">📷</button>
     <button id="undo"  title="撤销 (Ctrl+Z)">↶</button>
     <button id="clear" title="清空本窗口标注">🗑</button>
     <button id="done"  title="完成,回到正常使用 (Esc)">完成</button>

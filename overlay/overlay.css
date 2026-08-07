@@ -82,6 +82,26 @@ body.draw #bind-badge { display: none; }       /* 画笔模式不谈跟随,不�
 #ink-badge.show { opacity: .95; }
 body.view #ink-badge { display: none; }        /* 查看模式不调透明度,不显示 */
 
+/* 截图完成提示牌:底部居中,一条深色小胶囊,1.8s 淡出 */
+#shot-toast {
+  position: fixed; bottom: 46px; left: 50%; transform: translateX(-50%) translateY(6px);
+  pointer-events: none; z-index: 7; max-width: 78vw;
+  padding: 7px 16px; border-radius: 999px;
+  font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12.5px; line-height: 1.35;
+  color: rgba(255,255,255,.95); background: rgba(24,24,27,.92);
+  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 6px 22px rgba(0,0,0,.36);
+  opacity: 0; transition: opacity .2s ease, transform .2s ease; white-space: nowrap;
+}
+#shot-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 截图那一下:把工具条/描边/提示牌全部藏掉(别进画面),抓完复原。用 visibility 而非 display:none,
+   避免复原时 #toolbar 的登场动画被重新触发("啵"地又弹一次) */
+body.shooting #toolbar,
+body.shooting #frame,
+body.shooting #chip,
+body.shooting #bind-badge,
+body.shooting #ink-badge { visibility: hidden !important; }
+
 /* 工具条:深色玻璃胶囊(磨砂 + 顶部高光 + 分层阴影,比原来单色底更有质感) */
 #toolbar {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
