@@ -588,6 +588,34 @@ document.getElementById('clear').addEventListener('click', () => {
 document.getElementById('done').addEventListener('click', () => ipcRenderer.send('exit-draw'));
 document.getElementById('chip').addEventListener('click', () => ipcRenderer.send('enter-draw'));
 
+/* ---------- 截图当前窗口(含标注) ---------- */
+// 点 📷:先把工具条/描边/提示牌藏掉(加 body.shooting),等这次隐藏真的合成到屏幕上,再让主进程抓
+// 目标窗口那块屏幕 —— 抓的是屏幕像素,窗口内容 + 我们的标注天然叠好。抓完复原并提示。
+const shotBtn = document.getElementById('shot');
+const shotToast = document.getElementById('shot-toast');
+let shotToastTimer = null;
+function showShotToast(text) {
+  if (!shotToast) return;
+  shotToast.textContent = text;
+  shotToast.classList.add('show');
+  clearTimeout(shotToastTimer);
+  shotToastTimer = setTimeout(() => shotToast.classList.remove('show'), 1800);
+}
+if (shotBtn) {
+  shotBtn.addEventListener('click', () => {
+    if (mode !== 'draw' || document.body.classList.contains('shooting')) return; // 防连点
+    document.body.classList.add('shooting');
+    // 双 rAF + 一点延时:确保"隐藏工具条"已经画到屏幕上,抓屏里才不会带上工具条自己
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setTimeout(() => ipcRenderer.send('capture-window'), 60);
+    }));
+  });
+}
+ipcRenderer.on('capture-result', (e, res) => {
+  document.body.classList.remove('shooting');
+  showShotToast(res && res.ok ? '📷 已截图 · 已复制到剪贴板' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
+});
+
 /* ---------- 与主进程协作 ---------- */
 
 ipcRenderer.on('init', (e, data) => {

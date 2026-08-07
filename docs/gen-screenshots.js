@@ -48,7 +48,7 @@ function heroHTML(withToolbar) {
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
-    <span class="sep"></span><button>↶</button><button>🗑</button><b>完成</b>
+    <span class="sep"></span><button>📷</button><button>↶</button><button>🗑</button><b>完成</b>
   </div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
@@ -141,7 +141,7 @@ function toolbarHTML() {
       <span class="sep"></span>
       <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
       <span class="sep"></span>
-      <button title="撤销">↶</button><button title="清空">🗑</button><b>完成</b>
+      <button title="截图">📷</button><button title="撤销">↶</button><button title="清空">🗑</button><b>完成</b>
     </div>
   </body></html>`;
 }

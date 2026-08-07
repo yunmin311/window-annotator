@@ -1,7 +1,7 @@
 // Window Annotator — 给任意 Windows 窗口贴手绘标注,标注跟着窗口走
 // Ctrl+Alt+A: 给当前窗口开/关标注模式   Ctrl+Alt+Q: 退出程序
 'use strict';
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell, desktopCapturer, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const win32 = require('./src/win32');
@@ -10,6 +10,7 @@ const settings = require('./src/settings');
 const scrollUia = require('./src/scroll-uia');
 const regions = require('./src/regions');
 const trayPos = require('./src/tray-pos');
+const shotGeom = require('./src/shot-geom');
 
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
 // 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
@@ -219,6 +220,42 @@ ipcMain.on('enter-draw', (e) => { const o = overlayOf(e.sender); if (o) setDrawM
 ipcMain.on('set-ignore', (e, ignore) => {
   const o = overlayOf(e.sender);
   if (o && !o.drawMode) o.win.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined);
+});
+
+// 截图:把目标窗口那块屏幕整张抓下来。抓的是"屏幕合成后的像素",所以窗口内容 + 我们置顶的标注浮层
+// 天然叠在一起 = 所见即所得。浮层已先自行隐藏工具条/描边/提示牌(body.shooting)并重绘上屏,才发来这条。
+// 复制到剪贴板(主用途)+ 存一张 PNG 到 图片\Window Annotator(以防丢);裁剪几何走 shot-geom(已单测)。
+async function captureWindow(o) {
+  const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 它的屏幕矩形就是截图范围(DIP)
+  const disp = screen.getDisplayMatching(b);
+  const sf = disp.scaleFactor || 1;
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: Math.round(disp.size.width * sf), height: Math.round(disp.size.height * sf) },
+  });
+  const src = sources.find((s) => String(s.display_id) === String(disp.id)) || sources[0];
+  if (!src || src.thumbnail.isEmpty()) throw new Error('拿不到屏幕画面(可能被系统禁止截屏)');
+  const crop = shotGeom.cropRect(b, disp.bounds, disp.size, src.thumbnail.getSize());
+  const shot = src.thumbnail.crop(crop);
+  clipboard.writeImage(shot);
+  const dir = path.join(app.getPath('pictures'), 'Window Annotator');
+  fs.mkdirSync(dir, { recursive: true });
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const file = path.join(dir,
+    `WA_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`);
+  fs.writeFileSync(file, shot.toPNG());
+  return file;
+}
+ipcMain.on('capture-window', async (e) => {
+  const o = overlayOf(e.sender);
+  if (!o) return;
+  try {
+    const file = await captureWindow(o);
+    if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
+  } catch (err) {
+    if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
+  }
 });
 
 // 快捷键注册:首选组合被别的软件占了(QQ 截图就是 Ctrl+Alt+A)就顺着备用链找,并明确告知
