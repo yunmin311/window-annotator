@@ -48,7 +48,7 @@ function heroHTML(withToolbar) {
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
-    <span class="sep"></span><button><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M8 8 4 12l4 4"/><path d="M4 12h9a5 5 0 0 1 0 10h-1"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
+    <span class="sep"></span><button><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h9a5 5 0 0 1 0 10h-1"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
   </div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
@@ -143,7 +143,7 @@ function toolbarHTML() {
       <span class="sep"></span>
       <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
       <span class="sep"></span>
-      <button title="截图"><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button title="撤销"><svg viewBox="0 0 24 24"><path d="M8 8 4 12l4 4"/><path d="M4 12h9a5 5 0 0 1 0 10h-1"/></svg></button><button title="清空"><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
+      <button title="截图"><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button title="撤销"><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h9a5 5 0 0 1 0 10h-1"/></svg></button><button title="清空"><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
     </div>
   </body></html>`;
 }

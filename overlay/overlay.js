@@ -545,6 +545,19 @@ function placeInk(animate) {
   if (!animate) { void toolInk.offsetWidth; toolInk.style.transition = ''; } // 强制回流后恢复过渡
 }
 
+// 工具条登场动画(0.5s)期间布局在"挤压"(overflow:hidden + max-width:46px,按钮被压窄),那会儿量
+// offsetLeft/offsetWidth 会错位 —— 高亮就被摆成飘在最左边、又窄又高的一小截"白椭圆",还摆完不校正。
+// 所以登场时先把高亮藏起来(opacity:0),等动画结束(布局回到全宽)再量、摆好、淡入。reduced-motion
+// 把动画关了时 animationend 不会触发,用兜底 timeout 兜住。
+let placeInkTimer = null;
+function placeInkAfterPop() {
+  clearTimeout(placeInkTimer);
+  let done = false;
+  const go = () => { if (done) return; done = true; clearTimeout(placeInkTimer); toolbar.removeEventListener('animationend', go); placeInk(false); };
+  toolbar.addEventListener('animationend', go);
+  placeInkTimer = setTimeout(go, 560);
+}
+
 function selectTool(name) {
   tool = name;
   if (name !== 'note') clearNoteSelection();
@@ -602,7 +615,17 @@ function showShotToast(text) {
   shotToastTimer = setTimeout(() => shotToast.classList.remove('show'), 2600);
 }
 let shotFailSafe = null;
-function endShooting() { clearTimeout(shotFailSafe); document.body.classList.remove('shooting'); }
+// 截图结束把工具条放回来:重放登场动画(胶囊"啵"地弹回来,不生硬冒出),并按登场流程延后摆高亮
+function restoreToolbar(toast) {
+  clearTimeout(shotFailSafe);
+  document.body.classList.remove('shooting');
+  if (mode === 'draw') {
+    toolbar.style.animation = 'none'; void toolbar.offsetWidth; toolbar.style.animation = ''; // 重启 CSS 登场动画
+    toolInk.style.opacity = '0';
+    placeInkAfterPop();
+  }
+  if (toast) showShotToast(toast);
+}
 if (shotBtn) {
   shotBtn.addEventListener('click', () => {
     if (mode !== 'draw' || document.body.classList.contains('shooting')) return; // 防连点
@@ -610,7 +633,7 @@ if (shotBtn) {
     // 兜底:主进程万一没回话(异常/被杀),2.5s 后也把工具条放回来,绝不让胶囊回不来
     clearTimeout(shotFailSafe);
     shotFailSafe = setTimeout(() => {
-      if (document.body.classList.contains('shooting')) { document.body.classList.remove('shooting'); showShotToast('截图没有响应,请重试'); }
+      if (document.body.classList.contains('shooting')) restoreToolbar('截图没有响应,请重试');
     }, 2500);
     // 双 rAF + 一点延时:确保"隐藏工具条"已经画到屏幕上,抓屏里才不会带上工具条自己
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -619,8 +642,7 @@ if (shotBtn) {
   });
 }
 ipcRenderer.on('capture-result', (e, res) => {
-  endShooting();
-  showShotToast(res && res.ok ? '📷 已复制到剪贴板 · 已存到「图片\\Window Annotator」' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
+  restoreToolbar(res && res.ok ? '📷 已复制到剪贴板 · 已存到「图片\\Window Annotator」' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
 });
 
 /* ---------- 与主进程协作 ---------- */
@@ -642,7 +664,8 @@ ipcRenderer.on('mode', (e, m) => {
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
   if (m === 'draw') {
     snapRegions(); // 进画笔模式先把缓动吸附到位,画笔坐标才不会错位
-    requestAnimationFrame(() => placeInk(false)); // 工具条已显示,把高亮胶囊瞬间摆到当前工具下
+    toolInk.style.opacity = '0';   // 先藏高亮,别在登场动画的挤压期露出错位的"白椭圆"
+    placeInkAfterPop();            // 等登场动画结束、布局回到全宽,再把高亮摆到当前工具下并淡入
   }
 });
 
