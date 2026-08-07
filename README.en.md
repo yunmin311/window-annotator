@@ -88,7 +88,7 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Write a handwritten note | Click `Aa` → cursor becomes a text caret → **click** on the window → a dashed box appears in place → type → click away or `Ctrl+Enter` to finish |
 | Move / edit an existing note | In annotate mode, **drag** to move, **double-click** to edit |
 | Erase a stroke | Pick the eraser, click or swipe over it |
-| Screenshot the window + marks | In annotate mode, click 📷 on the toolbar — captures this window (with your annotations), copies it to the clipboard, and saves a PNG to `Pictures\Window Annotator` |
+| Screenshot the window + marks | In annotate mode, click the screenshot button (camera icon) on the toolbar — captures this window (with your annotations), copies it to the clipboard, and saves a PNG to `Pictures\Window Annotator`; the tray menu also has "Open screenshots folder" |
 | Fade marks (or zoom them) | In annotate mode, scroll the wheel over empty canvas — up fades, down restores; click the ◧ / 🔍 icon at the toolbar's left to switch the wheel to zoom |
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
 | Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |

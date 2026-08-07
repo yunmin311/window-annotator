@@ -48,7 +48,7 @@ function heroHTML(withToolbar) {
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
     <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
-    <span class="sep"></span><button>📷</button><button>↶</button><button>🗑</button><b>完成</b>
+    <span class="sep"></span><button><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M8 8 4 12l4 4"/><path d="M4 12h9a5 5 0 0 1 0 10h-1"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
   </div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif}
@@ -70,8 +70,9 @@ function heroHTML(withToolbar) {
     border-radius:999px;padding:6px 12px;z-index:9;${GLASS_BAR}}
   .wa-toolbar .app{color:rgba(255,255,255,.5);font-size:12px;padding:0 4px}
   .wa-toolbar .sep{width:1px;height:18px;background:rgba(255,255,255,.18);margin:0 5px}
-  .wa-toolbar button{border:none;background:transparent;color:#f0f0f2;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer}
-  .wa-toolbar button.on{background:rgba(255,255,255,.22)}
+  .wa-toolbar button{border:none;background:transparent;color:#f0f0f2;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+  .wa-toolbar button.on{background:rgba(255,255,255,.16);border-radius:10px}
+  .wa-toolbar button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
   .wa-toolbar button.ink{font-family:'Ink Free','Segoe Print',cursive;font-weight:700}
   .wa-toolbar i{width:16px;height:16px;border-radius:50%;display:inline-block;margin:0 2px;border:2px solid transparent}
   .wa-toolbar i.c-on{border-color:#fff}
@@ -123,8 +124,9 @@ function toolbarHTML() {
   #shot{display:flex;align-items:center;gap:6px;border-radius:999px;padding:13px 24px;${GLASS_BAR}}
   #shot .app{color:rgba(255,255,255,.55);font-size:14px;padding:0 6px}
   #shot .sep{width:1px;height:22px;background:rgba(255,255,255,.20);margin:0 8px}
-  #shot button{border:none;background:transparent;color:#f2f2f4;width:40px;height:40px;border-radius:50%;font-size:19px;cursor:pointer}
-  #shot button.on{background:rgba(255,255,255,.24)}
+  #shot button{border:none;background:transparent;color:#f2f2f4;width:40px;height:40px;border-radius:50%;font-size:19px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+  #shot button.on{background:rgba(255,255,255,.16);border-radius:12px}
+  #shot button svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
   #shot button.ink{font-family:'Ink Free','Segoe Print',cursive;font-weight:700}
   #shot i{width:20px;height:20px;border-radius:50%;display:inline-block;margin:0 3px;border:2px solid transparent}
   #shot i.on{border-color:#fff}
@@ -141,7 +143,7 @@ function toolbarHTML() {
       <span class="sep"></span>
       <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
       <span class="sep"></span>
-      <button title="截图">📷</button><button title="撤销">↶</button><button title="清空">🗑</button><b>完成</b>
+      <button title="截图"><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button title="撤销"><svg viewBox="0 0 24 24"><path d="M8 8 4 12l4 4"/><path d="M4 12h9a5 5 0 0 1 0 10h-1"/></svg></button><button title="清空"><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
     </div>
   </body></html>`;
 }

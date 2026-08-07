@@ -599,12 +599,19 @@ function showShotToast(text) {
   shotToast.textContent = text;
   shotToast.classList.add('show');
   clearTimeout(shotToastTimer);
-  shotToastTimer = setTimeout(() => shotToast.classList.remove('show'), 1800);
+  shotToastTimer = setTimeout(() => shotToast.classList.remove('show'), 2600);
 }
+let shotFailSafe = null;
+function endShooting() { clearTimeout(shotFailSafe); document.body.classList.remove('shooting'); }
 if (shotBtn) {
   shotBtn.addEventListener('click', () => {
     if (mode !== 'draw' || document.body.classList.contains('shooting')) return; // 防连点
     document.body.classList.add('shooting');
+    // 兜底:主进程万一没回话(异常/被杀),2.5s 后也把工具条放回来,绝不让胶囊回不来
+    clearTimeout(shotFailSafe);
+    shotFailSafe = setTimeout(() => {
+      if (document.body.classList.contains('shooting')) { document.body.classList.remove('shooting'); showShotToast('截图没有响应,请重试'); }
+    }, 2500);
     // 双 rAF + 一点延时:确保"隐藏工具条"已经画到屏幕上,抓屏里才不会带上工具条自己
     requestAnimationFrame(() => requestAnimationFrame(() => {
       setTimeout(() => ipcRenderer.send('capture-window'), 60);
@@ -612,8 +619,8 @@ if (shotBtn) {
   });
 }
 ipcRenderer.on('capture-result', (e, res) => {
-  document.body.classList.remove('shooting');
-  showShotToast(res && res.ok ? '📷 已截图 · 已复制到剪贴板' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
+  endShooting();
+  showShotToast(res && res.ok ? '📷 已复制到剪贴板 · 已存到「图片\\Window Annotator」' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
 });
 
 /* ---------- 与主进程协作 ---------- */

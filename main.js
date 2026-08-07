@@ -66,6 +66,7 @@ function createOverlay(targetHwnd, info) {
     info,
     drawMode: false,
     visible: false,
+    capturing: false,      // 截图进行中:追踪循环这段时间跳过它,别把浮层退出画笔/隐藏,免得工具条回不来
     lastBounds: null,
     lastPhys: null,
     lastTitleCheck: 0,     // 上次查标题的时间戳(节流用):标题变=多半切了标签页,换对应标注
@@ -156,6 +157,7 @@ function tick() {
   const fg = win32.getForegroundWindow();
   let busy = false;
   for (const [key, o] of overlays) {
+    if (o.capturing) continue; // 正在截图:这段时间别动它(别退出画笔模式/别隐藏),截完自然复原
     const state = win32.getWindowState(o.target);
     if (!state) { // 目标窗口关闭
       o.win.destroy();
@@ -225,6 +227,7 @@ ipcMain.on('set-ignore', (e, ignore) => {
 // 截图:把目标窗口那块屏幕整张抓下来。抓的是"屏幕合成后的像素",所以窗口内容 + 我们置顶的标注浮层
 // 天然叠在一起 = 所见即所得。浮层已先自行隐藏工具条/描边/提示牌(body.shooting)并重绘上屏,才发来这条。
 // 复制到剪贴板(主用途)+ 存一张 PNG 到 图片\Window Annotator(以防丢);裁剪几何走 shot-geom(已单测)。
+function shotsDir() { return path.join(app.getPath('pictures'), 'Window Annotator'); }
 async function captureWindow(o) {
   const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 它的屏幕矩形就是截图范围(DIP)
   const disp = screen.getDisplayMatching(b);
@@ -238,7 +241,7 @@ async function captureWindow(o) {
   const crop = shotGeom.cropRect(b, disp.bounds, disp.size, src.thumbnail.getSize());
   const shot = src.thumbnail.crop(crop);
   clipboard.writeImage(shot);
-  const dir = path.join(app.getPath('pictures'), 'Window Annotator');
+  const dir = shotsDir();
   fs.mkdirSync(dir, { recursive: true });
   const d = new Date();
   const p2 = (n) => String(n).padStart(2, '0');
@@ -249,12 +252,22 @@ async function captureWindow(o) {
 }
 ipcMain.on('capture-window', async (e) => {
   const o = overlayOf(e.sender);
-  if (!o) return;
+  // 即便没找到对应浮层也要回话,否则渲染端的 .shooting 撤不掉、工具条回不来(渲染端另有兜底超时双保险)
+  if (!o) { if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: '找不到浮层' }); return; }
+  o.capturing = true;   // 抓图这段时间让追踪循环别碰这个浮层(别因前台抖动退出画笔模式/隐藏它)
   try {
     const file = await captureWindow(o);
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
+    // 系统通知:明确告诉"成功了 + 存哪了",点一下直接在资源管理器里定位到这张图(治"找不到保存位置")
+    try {
+      const n = new Notification({ title: '📷 已截图 · 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
+      n.on('click', () => shell.showItemInFolder(file));
+      n.show();
+    } catch { /* 通知被系统关掉也没关系,浮层还有提示牌 */ }
   } catch (err) {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
+  } finally {
+    o.capturing = false;
   }
 });
 
@@ -297,6 +310,7 @@ function buildTrayMenu() {
         syncReader();
       } },
     { type: 'separator' },
+    { label: '打开截图文件夹', click: () => { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); } },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
     { label: '退出', click: () => app.quit() },
   ]);
@@ -344,6 +358,7 @@ ipcMain.on('tray-action', (e, action) => {
   if (menuWin && e.sender === menuWin.webContents && menuWin.isVisible()) menuWin.hide();
   if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
+  else if (action === 'open-shots') { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); }
   else if (action === 'open') shell.openPath(path.join(__dirname, 'data'));
   else if (action === 'quit') app.quit();
   // 'close'(按 Esc):已经 hide,别的什么都不做

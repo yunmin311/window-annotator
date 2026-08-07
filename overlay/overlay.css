@@ -125,10 +125,11 @@ body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #toolbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.14); margin: 0 4px; }
 
-/* 滑动高亮胶囊:唯一的"当前工具"指示,在工具间平滑滑行+变宽,而不是每个按钮各自闪一下底色 */
+/* 滑动高亮胶囊:唯一的"当前工具"指示,在工具间平滑滑行+变宽,而不是每个按钮各自闪一下底色。
+   圆角矩形(不是正圆)—— 一眼看出是"选中态底",不会被当成一个莫名的白色圆点。 */
 #tool-ink {
   position: absolute; left: 0; top: 0; width: 30px; height: 30px;
-  border-radius: 999px; background: rgba(255,255,255,.20); opacity: 0;
+  border-radius: 9px; background: rgba(255,255,255,.16); opacity: 0;
   z-index: 0; pointer-events: none; will-change: transform, width;
   transition: transform .3s cubic-bezier(.32,.72,0,1), width .3s cubic-bezier(.32,.72,0,1);
 }
@@ -149,6 +150,11 @@ body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0
 }
 #toolbar button[data-tool="note"] { font-family: 'Ink Free', 'Segoe Print', cursive; font-weight: 700; }
 #wheel-mode { font-size: 13px; color: rgba(255,255,255,.58); }   /* 滚轮作用切换:比工具略暗,是个次要控件 */
+
+/* 右侧动作图标(截图 / 撤销 / 清空)统一成单色线性图标 —— 和工具区的线性字形一个语言,
+   不再是"彩色 emoji + 细线字形"深浅不一、看着不齐 */
+#toolbar button svg.ic { width: 17px; height: 17px; display: block; pointer-events: none;
+  fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 #done { width: auto !important; padding: 0 12px; border-radius: 999px !important;
   font-size: 13px !important; background: rgba(255,255,255,.16) !important; }
 #done:hover { background: rgba(255,255,255,.28) !important; }
