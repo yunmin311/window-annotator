@@ -94,32 +94,56 @@ body.view #ink-badge { display: none; }        /* 查看模式不调透明度,�
 }
 #shot-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* 截图那一下:把工具条/描边/提示牌全部藏掉(别进画面),抓完复原。用 visibility 而非 display:none,
-   避免复原时 #toolbar 的登场动画被重新触发("啵"地又弹一次) */
+/* 截图那一下:把工具条/描边/提示牌全部硬藏(别进画面),抓完由 restoreToolbar 重播液态弹入复原 */
 body.shooting #toolbar,
 body.shooting #frame,
 body.shooting #chip,
 body.shooting #bind-badge,
 body.shooting #ink-badge { visibility: hidden !important; }
 
-/* 工具条:深色玻璃胶囊(磨砂 + 顶部高光 + 分层阴影,比原来单色底更有质感) */
+/* 工具条:Apple「液态玻璃」胶囊 —— 高透背板(强模糊 + 提饱和 + 提亮做出折射通透感)+ 顶沿镜面高光
+   + 底沿柔光 + 左右边缘透镜(多层 inset)+ 一道静态斜向高光条。静止时就有玻璃的通透与折光,不再是死板磨砂。
+   始终 display:flex,进出由 .shown / .hiding 播 keyframe(见下);静止(view)时落在隐藏态。 */
 #toolbar {
-  position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-  display: none; align-items: center; gap: 3px; overflow: hidden;
-  background: linear-gradient(180deg, rgba(44,44,49,.90), rgba(20,20,23,.96));
-  border: 1px solid rgba(255,255,255,.12);
+  position: fixed; top: 10px; left: 50%;
+  display: flex; align-items: center; gap: 3px; overflow: hidden;
   border-radius: 999px; padding: 5px 10px;
-  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow: 0 8px 28px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.14);
   font-family: 'Segoe UI', system-ui, sans-serif;
+  background:
+    linear-gradient(115deg, transparent 46%, rgba(255,255,255,.08) 50%, transparent 54%),  /* 静态斜向高光条(并入背景,省掉一个带 blend 的合成层=更省) */
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 34%),                /* 顶沿高光渐隐 */
+    linear-gradient(180deg, rgba(46,46,52,.86), rgba(20,20,24,.93));                         /* 玻璃本体(接近原来的实度,只留一点通透) */
+  border: 1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);            /* 从 blur20+brightness 减负:blur16、去 brightness,质感几乎不变但轻不少 */
+  backdrop-filter: blur(16px) saturate(1.5);
+  box-shadow:
+    0 10px 34px rgba(0,0,0,.42), 0 2px 6px rgba(0,0,0,.30),   /* 外投影:悬浮 */
+    inset 0 1px .5px rgba(255,255,255,.55),                   /* 顶沿镜面高光 */
+    inset 0 -1px 1px rgba(255,255,255,.10),                   /* 底沿柔光 */
+    inset 1px 0 1.5px rgba(255,255,255,.08),                  /* 左右边缘透镜 */
+    inset -1px 0 1.5px rgba(255,255,255,.08);
+  transform-origin: center center;                            /* 从中间向两边"展开" */
+  /* 隐藏态(静止/view):压成一颗短胶囊 + 透明 + 不可见,进出交给动画 */
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform: translateX(-50%) scaleX(.62) scaleY(.8);
 }
-/* 进入标注模式:从一个小胶囊"弹开"成整条 —— 因为整条一直 translateX(-50%) 居中,
-   max-width 逐帧变宽时会被重新居中,看起来就是从中间向两边"啵"地展开(Typeless 那种登场) */
-body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0,.2,1); }
-@keyframes toolbar-pop {
-  0%   { opacity: 0; max-width: 46px;  transform: translateX(-50%) translateY(-3px) scale(.9); }
-  15%  { opacity: 1; }                                   /* 先亮出小胶囊,再看着它展开 */
-  100% { opacity: 1; max-width: 760px; transform: translateX(-50%) translateY(0)    scale(1); }
+/* 登场:胶囊「弹开」—— 从一颗短胶囊突然展开,横向拉伸过冲、再回弹一两下(液态"咚咚/弹弹")。
+   全程只用 transform(scaleX/scaleY),不动布局:tool-ink 用的 offset 布局值恒定,不会再错位成白椭圆。
+   缓动 easeOutQuint:开头很快(突然展开)、后段很缓(慢慢把弹性收住)。 */
+#toolbar.shown  { animation: toolbar-in  .58s cubic-bezier(.22,1,.36,1) forwards; pointer-events: auto; }
+/* 退场:收拢回胶囊 + 淡出(略快),播完停在隐藏态 */
+#toolbar.hiding { animation: toolbar-out .26s cubic-bezier(.4,0,1,1) forwards; pointer-events: none; }
+@keyframes toolbar-in {
+  0%   { opacity: 0; visibility: visible; transform: translateX(-50%) scaleX(.62) scaleY(.8); }   /* 短胶囊 */
+  30%  { opacity: 1; }                                                                            /* 展开途中已亮出 */
+  52%  { transform: translateX(-50%) scaleX(1.05) scaleY(1.03); }                                 /* 冲过头:横向拉伸、竖向微胀(果冻感) */
+  70%  { transform: translateX(-50%) scaleX(.982) scaleY(.99); }                                  /* 回弹:轻轻压一下 */
+  85%  { transform: translateX(-50%) scaleX(1.007) scaleY(1.004); }                               /* 再小弹一记 */
+  100% { opacity: 1; visibility: visible; transform: translateX(-50%) scaleX(1) scaleY(1); }      /* 落定 */
+}
+@keyframes toolbar-out {
+  0%   { opacity: 1; visibility: visible; transform: translateX(-50%) scaleX(1)   scaleY(1); }
+  100% { opacity: 0; visibility: hidden;  transform: translateX(-50%) scaleX(.66) scaleY(.82); }  /* 收回胶囊 */
 }
 #app-name { color: rgba(255,255,255,.45); font-size: 12px; padding: 0 4px; max-width: 120px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -145,7 +169,9 @@ body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0
 #toolbar button.active { background: transparent; }         /* 当前工具由滑动胶囊指示,不再各自变底 */
 
 @media (prefers-reduced-motion: reduce) {
-  body.draw #toolbar { animation: none; }
+  /* 关动画时:.shown 直接落在可见态、.hiding 直接落在隐藏态(否则 base 隐藏态会让工具条永远不显示) */
+  #toolbar.shown  { animation: none; opacity: 1; visibility: visible; transform: translateX(-50%) scaleX(1) scaleY(1); pointer-events: auto; }
+  #toolbar.hiding { animation: none; opacity: 0; visibility: hidden; pointer-events: none; }
   #tool-ink, #toolbar button { transition: none; }
 }
 #toolbar button[data-tool="note"] { font-family: 'Ink Free', 'Segoe Print', cursive; font-weight: 700; }
@@ -164,3 +190,5 @@ body.draw #toolbar { display: flex; animation: toolbar-pop .5s cubic-bezier(.4,0
   border: 2px solid transparent; transition: transform .1s; }
 .swatch:hover { transform: scale(1.2); }
 .swatch.active { border-color: #fff; }
+/* 吸管取到的自定义色块:取到色才出现;加一圈淡外描边,免得取到接近白/透明的浅色时在深底工具条上"隐身" */
+.swatch.custom { box-shadow: 0 0 0 1px rgba(255,255,255,.35); }

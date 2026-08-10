@@ -42,6 +42,7 @@ draw on it. All code is an independent implementation.
 | 🎯 **Marks follow the window** | Move or resize the window and annotations track it in real time — not a frozen screenshot |
 | 📜 **Follows page scrolling** | Scroll and marks track the real scroll position — main content and sidebar each followed on their own; apps that don't expose scrolling fall back to pinning (see [FAQ](#-faq)) |
 | ✏️ **Six drawing tools** | Pen, hand-drawn arrow, box, highlighter, handwritten note, eraser — six colors |
+| 🎨 **Pick a color off the screen** | An eyedropper in the palette samples a color from **anywhere on screen** as your pen color (the OS-native color picker, full-screen) |
 | 💾 **Remembers automatically** | Saved per "app + window title"; close and reopen the window, the marks come back |
 | 🫥 **Stays out of your way** | One tap and the overlay becomes click-through — keep using the window underneath |
 | 📷 **One-tap screenshot** | Capture the window *with* your annotations — copied to the clipboard and saved to `Pictures\Window Annotator` |
@@ -50,16 +51,16 @@ draw on it. All code is an independent implementation.
 
 ## Screenshots
 
-**The toolbar in annotate mode** (pen / arrow / box / highlighter / note / eraser + six colors):
+**The toolbar in annotate mode** (pen / arrow / box / highlighter / note / eraser + six colors + screen color picker):
 
 <div align="center">
 <img src="docs/toolbar.png" alt="Floating toolbar" width="680">
 </div>
 
-**Entrance** (it pops open from a small capsule when you start annotating):
+**Liquid-glass toolbar** (it condenses into view when you start annotating and collapses away when you leave; a translucent piece of glass even at rest):
 
 <div align="center">
-<img src="docs/toolbar-pop.gif" alt="Toolbar capsule pop-out animation" width="520">
+<img src="docs/toolbar-pop.gif" alt="Toolbar liquid-glass appear and disappear animation" width="520">
 </div>
 
 ## 📦 Install
@@ -88,7 +89,9 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Write a handwritten note | Click `Aa` → cursor becomes a text caret → **click** on the window → a dashed box appears in place → type → click away or `Ctrl+Enter` to finish |
 | Move / edit an existing note | In annotate mode, **drag** to move, **double-click** to edit |
 | Erase a stroke | Pick the eraser, click or swipe over it |
+| Draw with a color from the screen | In annotate mode, click the **eyedropper** (right of the color dots) → the cursor becomes a magnifier → click **anywhere on screen** to sample → that color becomes your pen color and appears at the end of the dots (click it anytime to reselect) |
 | Screenshot the window + marks | In annotate mode, click the screenshot button (camera icon) on the toolbar — captures this window (with your annotations), copies it to the clipboard, and saves a PNG to `Pictures\Window Annotator`; the tray menu also has "Open screenshots folder" |
+| Change where screenshots are saved | Tray right-click → "截图保存位置…" (Screenshot save location) → pick a folder (the menu also shows the current folder name) |
 | Fade marks (or zoom them) | In annotate mode, scroll the wheel over empty canvas — up fades, down restores; click the ◧ / 🔍 icon at the toolbar's left to switch the wheel to zoom |
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
 | Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |

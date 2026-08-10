@@ -545,17 +545,37 @@ function placeInk(animate) {
   if (!animate) { void toolInk.offsetWidth; toolInk.style.transition = ''; } // 强制回流后恢复过渡
 }
 
-// 工具条登场动画(0.5s)期间布局在"挤压"(overflow:hidden + max-width:46px,按钮被压窄),那会儿量
-// offsetLeft/offsetWidth 会错位 —— 高亮就被摆成飘在最左边、又窄又高的一小截"白椭圆",还摆完不校正。
-// 所以登场时先把高亮藏起来(opacity:0),等动画结束(布局回到全宽)再量、摆好、淡入。reduced-motion
-// 把动画关了时 animationend 不会触发,用兜底 timeout 兜住。
+// 工具条液态进出:始终 display:flex,靠 .shown / .hiding 播 keyframe。
+// 登场每次都重启动画(移除 .shown → 强制回流 → 再加),这样"再次进入 / 截图复原"也能重播那记弹入。
+let hideTimer = null;
+function showToolbar() {
+  clearTimeout(hideTimer);
+  toolbar.classList.remove('hiding', 'shown');
+  void toolbar.offsetWidth;           // 强制回流,让下一次 add('shown') 重新触发入场动画
+  toolbar.classList.add('shown');
+}
+function hideToolbar() {
+  if (!toolbar.classList.contains('shown')) return; // 本来就没显示,不用退场
+  toolbar.classList.remove('shown');
+  toolbar.classList.add('hiding');    // 播收拢淡出
+  // 退场动画放完就摘掉 .hiding,让工具条回落到"无 class 的隐藏基态"(opacity:0 + visibility:hidden +
+  // pointer-events:none)—— 不靠 animation fill-mode 停在末帧(那在窗口不可见/被限帧时不可靠)。兜底 timeout
+  // 保证即使 animationend 没来(reduced-motion/限帧)也一定回落。
+  clearTimeout(hideTimer);
+  const done = () => { clearTimeout(hideTimer); toolbar.removeEventListener('animationend', done); toolbar.classList.remove('hiding'); };
+  toolbar.addEventListener('animationend', done);
+  hideTimer = setTimeout(done, 340);
+}
+
+// 登场动画期间 transform 只做 scale/blur(不挤 max-width),offsetLeft/offsetWidth 不受影响,tool-ink
+// 不会再被量错飘成"白椭圆"。仍等动画结束再摆高亮(更稳),reduced-motion 关了动画则用兜底 timeout。
 let placeInkTimer = null;
 function placeInkAfterPop() {
   clearTimeout(placeInkTimer);
   let done = false;
   const go = () => { if (done) return; done = true; clearTimeout(placeInkTimer); toolbar.removeEventListener('animationend', go); placeInk(false); };
   toolbar.addEventListener('animationend', go);
-  placeInkTimer = setTimeout(go, 560);
+  placeInkTimer = setTimeout(go, 620);
 }
 
 function selectTool(name) {
@@ -571,26 +591,60 @@ toolbar.querySelectorAll('[data-tool]').forEach((btn) => {
 });
 
 const colorsBox = document.getElementById('colors');
+// 选中某个颜色(命名色块传色名,吸管自定义色块传 hex);渲染时 COLORS[值]||值,所以 hex 也能直接用
+function selectColorEl(el, value) {
+  color = value;
+  document.body.style.setProperty('--accent', COLORS[value] || value);
+  colorsBox.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('active', s === el));
+  // 若正选中某个便签,顺手把它改成这个颜色
+  if (activeNote) {
+    activeNote.color = value;
+    const d = notesLayer.querySelector(`[data-id="${activeNote.id}"]`);
+    if (d) d.style.color = COLORS[value] || value;
+    save();
+  }
+}
 for (const name of Object.keys(COLORS)) {
   const s = document.createElement('span');
   s.className = 'swatch' + (name === color ? ' active' : '');
   s.style.background = COLORS[name];
   s.title = name;
-  s.addEventListener('click', () => {
-    color = name;
-    document.body.style.setProperty('--accent', COLORS[name]);
-    colorsBox.querySelectorAll('.swatch').forEach((el) => el.classList.toggle('active', el === s));
-    // 若正选中某个便签,顺手把它改成这个颜色
-    if (activeNote) {
-      activeNote.color = name;
-      const d = notesLayer.querySelector(`[data-id="${activeNote.id}"]`);
-      if (d) d.style.color = COLORS[name];
-      save();
-    }
-  });
+  s.addEventListener('click', () => selectColorEl(s, name));
   colorsBox.appendChild(s);
 }
+// 吸管取到的颜色专用色块:取到色才出现,点它可回到该色。始终排在命名色块末尾。
+const customSwatch = document.createElement('span');
+customSwatch.className = 'swatch custom';
+customSwatch.style.display = 'none';
+customSwatch.addEventListener('click', () => { if (customSwatch.dataset.hex) selectColorEl(customSwatch, customSwatch.dataset.hex); });
+colorsBox.appendChild(customSwatch);
 document.body.style.setProperty('--accent', COLORS[color]);
+
+// —— 屏幕取色(吸管)—— 用 Chromium 原生 EyeDropper 全屏取色,取到的 hex 直接当画笔色。
+// 取色期间通知主进程挂起追踪循环(picking 守卫),免得焦点一走浮层被判"离开前台"而退出画笔/隐藏。
+const eyedropperBtn = document.getElementById('eyedropper');
+function setPickedColor(hex) {
+  hex = String(hex).toUpperCase();
+  customSwatch.style.background = hex;
+  customSwatch.dataset.hex = hex;
+  customSwatch.style.display = '';
+  customSwatch.title = '取到的颜色 ' + hex + ' · 点此回到此色';
+  selectColorEl(customSwatch, hex);
+}
+async function pickScreenColor() {
+  if (mode !== 'draw') return;
+  if (typeof window.EyeDropper !== 'function') { showShotToast('当前系统内核不支持屏幕取色'); return; }
+  ipcRenderer.send('eyedropper-active', true);
+  try {
+    const res = await new window.EyeDropper().open();
+    if (res && res.sRGBHex) { setPickedColor(res.sRGBHex); showShotToast('🎨 已取色 ' + res.sRGBHex.toUpperCase() + ' · 已设为画笔颜色'); }
+  } catch (_) {
+    /* 用户按 Esc 取消 —— 静默,不弹提示 */
+  } finally {
+    ipcRenderer.send('eyedropper-active', false);
+  }
+}
+if (eyedropperBtn) eyedropperBtn.addEventListener('click', pickScreenColor);
 
 document.getElementById('undo').addEventListener('click', undo);
 document.getElementById('clear').addEventListener('click', () => {
@@ -620,7 +674,7 @@ function restoreToolbar(toast) {
   clearTimeout(shotFailSafe);
   document.body.classList.remove('shooting');
   if (mode === 'draw') {
-    toolbar.style.animation = 'none'; void toolbar.offsetWidth; toolbar.style.animation = ''; // 重启 CSS 登场动画
+    showToolbar();                 // 截图期间是硬藏的,回来给它"再凝结"一次(重播液态弹入)
     toolInk.style.opacity = '0';
     placeInkAfterPop();
   }
@@ -663,9 +717,12 @@ ipcRenderer.on('mode', (e, m) => {
   if (m === 'view') clearNoteSelection();
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
   if (m === 'draw') {
+    showToolbar();                 // 播液态弹入(由虚到实 + 轻微回弹)
     snapRegions(); // 进画笔模式先把缓动吸附到位,画笔坐标才不会错位
-    toolInk.style.opacity = '0';   // 先藏高亮,别在登场动画的挤压期露出错位的"白椭圆"
-    placeInkAfterPop();            // 等登场动画结束、布局回到全宽,再把高亮摆到当前工具下并淡入
+    toolInk.style.opacity = '0';   // 先藏高亮,等登场动画结束再摆好淡入
+    placeInkAfterPop();            // 等登场动画结束,把高亮摆到当前工具下并淡入
+  } else {
+    hideToolbar();                 // 播液态退场(收拢淡出)
   }
 });
 

@@ -33,12 +33,20 @@ text-shadow:0 1px 0 rgba(255,255,255,.6),0 -1px 0 rgba(255,255,255,.6),1px 0 0 r
 #notes{position:absolute;inset:0}
 `;
 
-// 深色玻璃工具条(磨砂 + 顶部高光 + 分层阴影),和 overlay.css 里真实工具条同款质感
+// Apple「液态玻璃」工具条(高透背板 + 顶沿镜面高光 + 边缘透镜 + 静态斜向高光条),和 overlay.css 里同款
 const GLASS_BAR = `
-  background:linear-gradient(180deg,rgba(44,44,49,.90),rgba(20,20,23,.96));
-  -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
+  background:
+    linear-gradient(115deg, transparent 46%, rgba(255,255,255,.08) 50%, transparent 54%),
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 34%),
+    linear-gradient(180deg, rgba(46,46,52,.86), rgba(20,20,24,.93));
+  -webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);
   border:1px solid rgba(255,255,255,.14);
-  box-shadow:0 14px 44px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.16);`;
+  box-shadow:
+    0 14px 44px rgba(0,0,0,.42),0 2px 6px rgba(0,0,0,.30),
+    inset 0 1px .5px rgba(255,255,255,.55),
+    inset 0 -1px 1px rgba(255,255,255,.10),
+    inset 1px 0 1.5px rgba(255,255,255,.08),
+    inset -1px 0 1.5px rgba(255,255,255,.08);`;
 
 // 模拟"浏览器窗口 + 一篇文章",再叠标注——展示"任意窗口都能标"。工具条=当前真实六个工具(含方框 ▭)
 function heroHTML(withToolbar) {
@@ -47,7 +55,7 @@ function heroHTML(withToolbar) {
     <span class="app">chrome</span><button style="opacity:.62">◧</button><span class="sep"></span>
     <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
     <span class="sep"></span>
-    <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
+    <i style="background:#3d3d40"></i><i style="background:#e5484d" class="c-on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i><button title="从屏幕取色"><svg viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4Z"/></svg></button>
     <span class="sep"></span><button><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h9a5 5 0 0 1 0 10h-1"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
   </div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -142,6 +150,7 @@ function toolbarHTML() {
       <button title="橡皮">⌫</button>
       <span class="sep"></span>
       <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
+      <button title="从屏幕取色(吸管)"><svg viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4Z"/></svg></button>
       <span class="sep"></span>
       <button title="截图"><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button title="撤销"><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h9a5 5 0 0 1 0 10h-1"/></svg></button><button title="清空"><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
     </div>

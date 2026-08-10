@@ -1,7 +1,7 @@
 // Window Annotator — 给任意 Windows 窗口贴手绘标注,标注跟着窗口走
 // Ctrl+Alt+A: 给当前窗口开/关标注模式   Ctrl+Alt+Q: 退出程序
 'use strict';
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell, desktopCapturer, clipboard } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell, desktopCapturer, clipboard, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const win32 = require('./src/win32');
@@ -15,6 +15,10 @@ const shotGeom = require('./src/shot-geom');
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
 // 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
 let scrollFollow = settings.get('scrollFollow', true);
+
+// UIA 滚动读取的最小间隔(ms):UIA 遍历无障碍树是重活,~30fps 足够顺(渲染端还有缓动插值抹顺),
+// 别每帧都读——这是"运行有点卡"的主要来源。位置对齐(applyBounds)不受此限,仍每帧跟手。
+const UIA_MIN_MS = 32;
 
 // key = 目标窗口 hwnd 字符串 -> { win, overlayHwnd, target, storeKey, drawMode, visible, lastBounds }
 const overlays = new Map();
@@ -67,9 +71,11 @@ function createOverlay(targetHwnd, info) {
     drawMode: false,
     visible: false,
     capturing: false,      // 截图进行中:追踪循环这段时间跳过它,别把浮层退出画笔/隐藏,免得工具条回不来
+    picking: false,        // 屏幕取色进行中(原生吸管):同理挂起追踪,焦点一走别把浮层判成"离开前台"退出画笔
     lastBounds: null,
     lastPhys: null,
     lastTitleCheck: 0,     // 上次查标题的时间戳(节流用):标题变=多半切了标签页,换对应标注
+    lastUiaRead: 0,        // 上次读 UIA 滚动区的时间戳(节流到 ~30fps,见 UIA_MIN_MS)
     regionsKeyed: [],      // 上一帧带 key 的可滚动区 [{key, rect}](物理),跨帧保持同一块区的 key
     keyRef: { n: 0 },      // 给新区发号
     lastRegionsSent: null, // 上次发给浮层的区 payload 签名;变了才重发
@@ -157,7 +163,7 @@ function tick() {
   const fg = win32.getForegroundWindow();
   let busy = false;
   for (const [key, o] of overlays) {
-    if (o.capturing) continue; // 正在截图:这段时间别动它(别退出画笔模式/别隐藏),截完自然复原
+    if (o.capturing || o.picking) continue; // 正在截图/取色:这段时间别动它(别退出画笔/别隐藏),完事自然复原
     const state = win32.getWindowState(o.target);
     if (!state) { // 目标窗口关闭
       o.win.destroy();
@@ -175,14 +181,19 @@ function tick() {
       if (!o.visible) { o.win.showInactive(); o.visible = true; busy = true; }
       // 标题变了(多半切了标签页)就换这个窗口对应的那套标注(节流,别每帧查)
       if (Date.now() - o.lastTitleCheck > 400) { o.lastTitleCheck = Date.now(); checkTitle(o); }
-      // 查看模式且目标在前台:算出所有可滚动区发给浮层(变了才发),并更新绑定状态牌
+      // 查看模式且目标在前台:算出所有可滚动区发给浮层(变了才发),并更新绑定状态牌。
+      // computeRegions 走 UIA 遍历无障碍树,是这循环里最重的活;位置对齐可以 60fps,但 UIA 没必要那么勤——
+      // 节流到 ~30fps 读一次,渲染端 easeRegions 每帧 0.35 缓动插值,视觉照样顺,却省掉一半 UIA 开销(卡的主因)。
       if (!o.drawMode && win32.same(fg, o.target)) {
         if (scrollFollow) {
-          const payload = computeRegions(o, state.rect);
-          const bs = payload.length ? 'scroll' : 'window';
-          if (o.bindState !== bs) { o.bindState = bs; o.win.webContents.send('bind-state', bs); }
-          const sig = JSON.stringify(payload);
-          if (sig !== o.lastRegionsSent) { o.lastRegionsSent = sig; o.win.webContents.send('regions', payload); busy = true; }
+          if (Date.now() - (o.lastUiaRead || 0) >= UIA_MIN_MS) {
+            o.lastUiaRead = Date.now();
+            const payload = computeRegions(o, state.rect);
+            const bs = payload.length ? 'scroll' : 'window';
+            if (o.bindState !== bs) { o.bindState = bs; o.win.webContents.send('bind-state', bs); }
+            const sig = JSON.stringify(payload);
+            if (sig !== o.lastRegionsSent) { o.lastRegionsSent = sig; o.win.webContents.send('regions', payload); busy = true; }
+          }
         } else if (o.bindState !== null) {
           o.bindState = null; o.lastRegionsSent = '[]'; o.win.webContents.send('regions', []); // 关跟随:清区+状态
         }
@@ -195,7 +206,8 @@ function tick() {
   return busy;
 }
 
-// 自适应节奏:有动静时贴到 8ms 高频跟手,静止后回落 24ms 省电,完全没标注时 120ms 极懒待命
+// 自适应节奏:有动静时 16ms(60fps)高频跟手,静止后回落 24ms 省电,完全没标注时 120ms 极懒待命。
+// 高频档从 8ms(125fps)提到 16ms:窗口跟随视觉上 60fps 已足够跟手,却省掉近一半的每帧 FFI/循环开销。
 let trackTimer = null;
 let calmFrames = 0;
 function trackLoop() {
@@ -203,7 +215,7 @@ function trackLoop() {
   calmFrames = busy ? 0 : Math.min(calmFrames + 1, 9999);
   let delay;
   if (!overlays.size) delay = 120;
-  else if (calmFrames < 24) delay = 8;   // 刚有动静的一小段时间保持高频,拖动/滚动才跟得紧
+  else if (calmFrames < 24) delay = 16;  // 刚有动静的一小段时间保持 60fps,拖动/滚动跟得紧
   else delay = 24;                        // 静止:一秒 ~40 次,足够第一时间发现窗口又动了
   trackTimer = setTimeout(trackLoop, delay);
 }
@@ -223,11 +235,36 @@ ipcMain.on('set-ignore', (e, ignore) => {
   const o = overlayOf(e.sender);
   if (o && !o.drawMode) o.win.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined);
 });
+// 屏幕取色开始/结束:挂起/恢复对该浮层的追踪(见 tick 里的 picking 守卫)
+ipcMain.on('eyedropper-active', (e, active) => {
+  const o = overlayOf(e.sender);
+  if (o) o.picking = !!active;
+});
 
 // 截图:把目标窗口那块屏幕整张抓下来。抓的是"屏幕合成后的像素",所以窗口内容 + 我们置顶的标注浮层
 // 天然叠在一起 = 所见即所得。浮层已先自行隐藏工具条/描边/提示牌(body.shooting)并重绘上屏,才发来这条。
 // 复制到剪贴板(主用途)+ 存一张 PNG 到 图片\Window Annotator(以防丢);裁剪几何走 shot-geom(已单测)。
-function shotsDir() { return path.join(app.getPath('pictures'), 'Window Annotator'); }
+// 截图保存位置:用户在托盘菜单里设过就用自定义目录,否则默认「图片\Window Annotator」。
+// 存一个绝对路径在设置里(将来和大项目对接时,大项目那头也读同一个目录)。
+function shotsDir() {
+  const custom = settings.get('shotsDir', '');
+  return (custom && String(custom).trim()) ? custom : path.join(app.getPath('pictures'), 'Window Annotator');
+}
+// 弹系统选文件夹对话框,选定后写进设置。托盘菜单和原生兜底菜单共用。
+async function pickShotsDir() {
+  const cur = shotsDir();
+  let dflt;
+  try { dflt = fs.existsSync(cur) ? cur : app.getPath('pictures'); } catch { dflt = app.getPath('pictures'); }
+  const res = await dialog.showOpenDialog({
+    title: '选择截图保存位置',
+    defaultPath: dflt,
+    buttonLabel: '就存这里',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return;
+  settings.set('shotsDir', res.filePaths[0]);
+  try { new Notification({ title: '✅ 截图保存位置已更新', body: res.filePaths[0] }).show(); } catch { /* 通知被关也没关系 */ }
+}
 async function captureWindow(o) {
   const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 它的屏幕矩形就是截图范围(DIP)
   const disp = screen.getDisplayMatching(b);
@@ -310,6 +347,7 @@ function buildTrayMenu() {
         syncReader();
       } },
     { type: 'separator' },
+    { label: '设置截图保存位置…', click: () => pickShotsDir() },
     { label: '打开截图文件夹', click: () => { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); } },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
     { label: '退出', click: () => app.quit() },
@@ -341,6 +379,7 @@ function showTrayMenu() {
   menuWin.webContents.send('menu-state', {
     autostart: isAutoStart(), follow: scrollFollow,
     annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
+    shotsName: path.basename(shotsDir()),   // 只给文件夹名(短),让菜单能显示"现在存哪"而不撑宽
   });
 }
 
@@ -358,6 +397,7 @@ ipcMain.on('tray-action', (e, action) => {
   if (menuWin && e.sender === menuWin.webContents && menuWin.isVisible()) menuWin.hide();
   if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
+  else if (action === 'set-shots-dir') pickShotsDir();
   else if (action === 'open-shots') { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); }
   else if (action === 'open') shell.openPath(path.join(__dirname, 'data'));
   else if (action === 'quit') app.quit();
@@ -406,4 +446,4 @@ if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
 app.on('will-quit', () => { globalShortcut.unregisterAll(); scrollUia.stop(); });
 app.on('window-all-closed', () => {}); // 没有覆盖层时也保持后台驻留
 
-module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays, checkTitle };
+module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays, checkTitle, shotsDir };
