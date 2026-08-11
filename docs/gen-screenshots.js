@@ -85,6 +85,16 @@ function heroHTML(withToolbar) {
   .wa-toolbar i{width:16px;height:16px;border-radius:50%;display:inline-block;margin:0 2px;border:2px solid transparent}
   .wa-toolbar i.c-on{border-color:#fff}
   .wa-toolbar b{margin-left:6px;padding:5px 13px;background:rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:13px;font-weight:500}
+  /* 测量标尺:虚线框 + 框外右下角物理像素标签 */
+  .ha-ruler{position:absolute;border:1.6px dashed #e5484d;border-radius:3px;z-index:8}
+  .ha-ruler span{position:absolute;right:0;bottom:100%;margin-bottom:6px;font:600 13px 'Segoe UI';color:#fff;white-space:nowrap;
+    text-shadow:0 0 4px #18181b,0 0 4px #18181b,1.5px 1.5px 0 #18181b,-1.5px -1.5px 0 #18181b}
+  /* 放大镜镜片:圆角玻璃边 + 阴影,里面是放大的内容 */
+  .ha-loupe{position:absolute;border-radius:16px;overflow:hidden;z-index:8;background:#fff;
+    border:2px solid rgba(255,255,255,.92);box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 0 0 1px rgba(0,0,0,.2);
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#111827}
+  /* 示例按钮:给测量标尺量尺寸用（放右侧空白，不压正文）*/
+  .ha-btn{position:absolute;padding:13px 26px;background:#0e8fd8;color:#fff;border-radius:10px;font-weight:600;font-size:16px;z-index:7;box-shadow:0 6px 18px rgba(14,143,216,.35)}
   </style></head><body>
     <div class="win">
       <div class="chrome">
@@ -102,6 +112,11 @@ function heroHTML(withToolbar) {
     ${toolbar}
     <svg id="canvas"><g id="hl-layer"></g><g id="ink-layer"></g></svg>
     <div id="notes"></div>
+    <!-- 示例按钮 + 测量标尺量它的尺寸(放右侧空白,不压正文) -->
+    <div class="ha-btn" style="left:884px;top:374px">导出报告</div>
+    <div class="ha-ruler" style="left:878px;top:368px;width:150px;height:52px"><span>150 × 44 px</span></div>
+    <!-- 放大镜:放大"34%"看细节(展示放大镜功能) -->
+    <div class="ha-loupe" style="left:864px;top:476px;width:194px;height:104px;font-size:56px">34%</div>
     <script>${RENDER}
     function circle(cx,cy,r){const pts=[];for(let a=-0.3;a<Math.PI*2+0.3;a+=0.25){pts.push([cx+Math.cos(a)*r*1.25,cy+Math.sin(a)*r]);}return pts;}
     render([
@@ -114,7 +129,7 @@ function heroHTML(withToolbar) {
       // 红色手绘箭头指向激活率那句
       {type:'arrow',color:'red',from:[930,468],to:[500,342],seed:7},
       // 蓝色手写便签
-      {type:'note',color:'blue',x:940,y:298,text:'这句是重点\\n单独拎出来讲 →',rot:-3},
+      {type:'note',color:'blue',x:948,y:246,text:'这句是重点\\n单独拎出来讲 →',rot:-3},
     ]);
     </script>
   </body></html>`;
