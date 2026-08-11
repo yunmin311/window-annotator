@@ -41,17 +41,19 @@ draw on it. All code is an independent implementation.
 | 🪟 **On any window** | Browser, PDF, chat, editor… if it's a window, you can mark it up |
 | 🎯 **Marks follow the window** | Move or resize the window and annotations track it in real time — not a frozen screenshot |
 | 📜 **Follows page scrolling** | Scroll and marks track the real scroll position — main content and sidebar each followed on their own; apps that don't expose scrolling fall back to pinning (see [FAQ](#-faq)) |
-| ✏️ **Six drawing tools** | Pen, hand-drawn arrow, box, highlighter, handwritten note, eraser — six colors |
+| ✏️ **Drawing tools** | Pen, hand-drawn arrow, box, highlighter, handwritten note, eraser — **seven colors** (incl. white) |
+| 📐 **Measure ruler** | Drag a box, see its size in physical pixels live (element size, spacing); follows the window |
+| 🔍 **Loupe / magnifier** | Drag a region → freeze & magnify it into a glass lens; circle / square shape, 2× / 3× / 4×; follows the window |
 | 🎨 **Pick a color off the screen** | An eyedropper in the palette samples a color from **anywhere on screen** as your pen color (the OS-native color picker, full-screen) |
 | 💾 **Remembers automatically** | Saved per "app + window title"; close and reopen the window, the marks come back |
 | 🫥 **Stays out of your way** | One tap and the overlay becomes click-through — keep using the window underneath |
-| 📷 **One-tap screenshot** | Capture the window *with* your annotations — copied to the clipboard and saved to `Pictures\Window Annotator` |
+| 📷 **Screenshot** | Click = whole window with annotations; **right-click = box-select and capture just that region**; both copy to clipboard + save to `Pictures\Window Annotator` |
 | 🔔 **Lives in the tray** | A red ✎ icon; auto-start and the follow toggle are in the right-click menu |
 | 🀄 **No licensing baggage** | Handwriting uses fonts built into Windows; no third-party assets bundled |
 
 ## Screenshots
 
-**The toolbar in annotate mode** (pen / arrow / box / highlighter / note / eraser + six colors + screen color picker):
+**The toolbar in annotate mode** (pen / arrow / box / highlighter / note / eraser / ruler / loupe + seven colors + screen color picker):
 
 <div align="center">
 <img src="docs/toolbar.png" alt="Floating toolbar" width="680">
@@ -89,10 +91,14 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Write a handwritten note | Click `Aa` → cursor becomes a text caret → **click** on the window → a dashed box appears in place → type → click away or `Ctrl+Enter` to finish |
 | Move / edit an existing note | In annotate mode, **drag** to move, **double-click** to edit |
 | Erase a stroke | Pick the eraser, click or swipe over it |
+| Switch tools fast | Number keys `1`–`8`; or set the wheel to "switch tool" mode (◧ icon at the toolbar's left — click / middle-click / right-click cycles opacity / zoom / switch-tool) |
+| Measure an element / spacing | Pick the **ruler** (📐) → drag a box → live physical-pixel `W × H px` (label sits outside the box); follows the window |
+| Magnify a detail | Pick the **loupe** (🔍) → drag a region → a draggable glass lens (a frozen snapshot). Middle-click cycles zoom 2× / 3× / 4×, right-click the loupe button toggles circle / square |
 | Draw with a color from the screen | In annotate mode, click the **eyedropper** (right of the color dots) → the cursor becomes a magnifier → click **anywhere on screen** to sample → that color becomes your pen color and appears at the end of the dots (click it anytime to reselect) |
-| Screenshot the window + marks | In annotate mode, click the screenshot button (camera icon) on the toolbar — captures this window (with your annotations), copies it to the clipboard, and saves a PNG to `Pictures\Window Annotator`; the tray menu also has "Open screenshots folder" |
+| Screenshot the window + marks | Click the screenshot button (camera icon) to capture the **whole window** (with annotations) → clipboard + PNG in `Pictures\Window Annotator`; the tray menu also has "Open screenshots folder" |
+| Capture just a region | **Right-click** the screenshot button → cursor becomes a crosshair → box-select → captures only that region (with annotations) |
 | Change where screenshots are saved | Tray right-click → "截图保存位置…" (Screenshot save location) → pick a folder (the menu also shows the current folder name) |
-| Fade marks (or zoom them) | In annotate mode, scroll the wheel over empty canvas — up fades, down restores; click the ◧ / 🔍 icon at the toolbar's left to switch the wheel to zoom |
+| Fade marks / zoom / switch tool with the wheel | Scroll over empty canvas; the ◧ icon at the toolbar's left cycles what the wheel does — opacity / zoom annotations / switch tool (click / middle-click / right-click to cycle) |
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
 | Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |
 | Start on boot | Tray right-click → "开机自动启动" (Start on login) |
@@ -120,8 +126,9 @@ followed yet — the marks fall back to being pinned to the window (move / resiz
 > This is an area of **ongoing compatibility work**: every app whose scrolling we learn to read is one more that follows precisely. Unreadable ones degrade gracefully to window-pinning — no jumping around.
 
 **Does it slow down my PC?**
-In the background it does one very cheap thing: realign the overlay every 16 ms — and it only reads scroll
-position when a window that actually has annotations is in the foreground. When you're not annotating, it costs almost nothing.
+In the background it does one very cheap thing: adaptively realign the overlay — 60fps while things move,
+backing off when still, near-idle with nothing annotated; scroll position is read only ~30fps, and only when a
+window that actually has annotations is in the foreground. When you're not annotating, it costs almost nothing.
 
 ## 🔧 How it works
 
