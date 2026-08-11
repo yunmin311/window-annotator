@@ -284,9 +284,8 @@ async function captureRegion(o, region, thumbScale) {
   const crop = shotGeom.cropRect(screenRect, disp.bounds, disp.size, src.thumbnail.getSize());
   return src.thumbnail.crop(crop);
 }
-async function captureWindow(o) {
-  const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 整块就是截图范围(DIP)
-  const shot = await captureRegion(o, { x: 0, y: 0, w: b.width, h: b.height });
+// 复制到剪贴板 + 存一张带时间戳的 PNG,返回文件路径。整窗截图 / 框选区域截图共用。
+function saveShotImage(shot) {
   clipboard.writeImage(shot);
   const dir = shotsDir();
   fs.mkdirSync(dir, { recursive: true });
@@ -296,6 +295,11 @@ async function captureWindow(o) {
     `WA_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`);
   fs.writeFileSync(file, shot.toPNG());
   return file;
+}
+async function captureWindow(o) {
+  const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 整块就是截图范围(DIP)
+  const shot = await captureRegion(o, { x: 0, y: 0, w: b.width, h: b.height });
+  return saveShotImage(shot);
 }
 ipcMain.on('capture-window', async (e) => {
   const o = overlayOf(e.sender);
@@ -311,6 +315,27 @@ ipcMain.on('capture-window', async (e) => {
       n.on('click', () => shell.showItemInFolder(file));
       n.show();
     } catch { /* 通知被系统关掉也没关系,浮层还有提示牌 */ }
+  } catch (err) {
+    if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
+  } finally {
+    o.capturing = false;
+  }
+});
+
+// 框选区域截图:抓框选那块(sf 高清,含标注),复制剪贴板 + 存 PNG(和整窗截图同款落地,共用 capture-result)
+ipcMain.on('capture-region', async (e, region) => {
+  const o = overlayOf(e.sender);
+  if (!o) { if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: '找不到浮层' }); return; }
+  o.capturing = true;
+  try {
+    const shot = await captureRegion(o, region);   // 默认 sf 高清(要存盘)
+    const file = saveShotImage(shot);
+    if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
+    try {
+      const n = new Notification({ title: '📷 已截图(框选区域)· 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
+      n.on('click', () => shell.showItemInFolder(file));
+      n.show();
+    } catch { /* 通知被关也没关系,浮层还有提示牌 */ }
   } catch (err) {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
   } finally {

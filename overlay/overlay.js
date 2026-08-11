@@ -281,8 +281,9 @@ function makeLoupe(item) {
   div.dataset.id = item.id;
   div.style.left = item.x + 'px';
   div.style.top = item.y + 'px';
-  div.style.width = (item.w * 2) + 'px';   // 显示 = 源区域的 2 倍(放大)
-  div.style.height = (item.h * 2) + 'px';
+  const z = item.zoom || 2;
+  div.style.width = (item.w * z) + 'px';   // 显示 = 源区域 × 倍率(放大)
+  div.style.height = (item.h * z) + 'px';
   div.style.backgroundImage = 'url(' + item.img + ')';
   div.title = '放大镜(那一刻的快照)· 拖动移动 · 右键删除';
   bindLoupe(div, item);
@@ -332,7 +333,9 @@ let saveTimer = null;
 function save() {
   document.body.classList.toggle('has-items', items.length > 0);
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => ipcRenderer.send('annotations-changed', items), 350);
+  // 放大镜是"那一刻"的大截图快照(dataURL 几十 KB~MB),不进存档 —— 否则每次画东西都要把它全量 IPC + 写盘,
+  // 放大镜一多就拖慢。它本就是临时的:会话内跟随窗口即可,关了再开不保留。
+  saveTimer = setTimeout(() => ipcRenderer.send('annotations-changed', items.filter((it) => it.type !== 'loupe')), 350);
 }
 
 function addItem(item) {
@@ -462,6 +465,15 @@ svg.addEventListener('mousedown', (e) => {
   const x = e.clientX, y = cy(e.clientY);
   // 不在落笔当下定 roff0:画笔模式下浮层在前台、读不到目标滚动区。回到查看模式由 bindPending 延迟绑定。
 
+  if (regionShotArm) {
+    // 框选区域截图:框一块,松手截那块(复用放大镜的橡皮筋样式)
+    const band = document.createElement('div');
+    band.className = 'loupe-band';
+    band.style.left = x + 'px'; band.style.top = y + 'px'; band.style.width = '0'; band.style.height = '0';
+    document.body.appendChild(band);
+    drawing = { type: 'regionshot', from: [x, y], band, region: null };
+    return;
+  }
   if (tool === 'eraser') {
     const t = e.target.closest('[data-id]');
     if (t) deleteItem(t.dataset.id);
@@ -518,7 +530,7 @@ window.addEventListener('mousemove', (e) => {
     updateRuler(drawing.el, drawing.item);
     return;
   }
-  if (drawing.type === 'loupe') {
+  if (drawing.type === 'loupe' || drawing.type === 'regionshot') {
     const [x1, y1] = drawing.from;
     const bx = Math.min(x1, x), by = Math.min(y1, y), bw = Math.abs(x - x1), bh = Math.abs(y - y1);
     drawing.region = { x: bx, y: by, w: bw, h: bh };
@@ -557,6 +569,14 @@ window.addEventListener('mouseup', () => {
     if (d.band) d.band.remove();
     const r = d.region;
     if (r && r.w >= 10 && r.h >= 10) requestLoupe(r); // 太小忽略
+    return;
+  }
+  if (d.type === 'regionshot') {
+    if (d.band) d.band.remove();
+    regionShotArm = false;
+    svg.style.cursor = CURSORS[tool] || 'crosshair'; // 复原光标
+    const r = d.region;
+    if (r && r.w >= 8 && r.h >= 8) requestRegionShot(r); // 太小忽略
     return;
   }
   d.el.remove();
@@ -651,11 +671,12 @@ window.addEventListener('wheel', (e) => {
   else inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
   applyInk(true);
 }, { passive: false });
-// 鼠标中键:循环切换滚轮模式(preventDefault 挡掉浏览器那种中键自动滚动)
+// 鼠标中键:放大镜工具时切放大倍率,其它工具时循环切滚轮模式(preventDefault 挡掉中键自动滚动)
 window.addEventListener('mousedown', (e) => {
   if (mode !== 'draw' || e.button !== 1) return;
   e.preventDefault();
-  cycleWheelMode();
+  if (tool === 'loupe') cycleLoupeZoom();
+  else cycleWheelMode();
 });
 
 /* ---------- 工具条 ---------- */
@@ -810,6 +831,15 @@ function restoreToolbar(toast) {
   }
   if (toast) showShotToast(toast);
 }
+// 框选区域截图:右键 📷 进入框选模式,框一块 → 只截那块(含标注)。复用截图那套隐藏/兜底/提示。
+let regionShotArm = false;
+function requestRegionShot(region) {
+  if (document.body.classList.contains('shooting')) return;
+  document.body.classList.add('shooting');
+  clearTimeout(shotFailSafe);
+  shotFailSafe = setTimeout(() => { if (document.body.classList.contains('shooting')) restoreToolbar('截图没有响应,请重试'); }, 4000);
+  requestAnimationFrame(() => { setTimeout(() => ipcRenderer.send('capture-region', region), 40); });
+}
 if (shotBtn) {
   shotBtn.addEventListener('click', () => {
     if (mode !== 'draw' || document.body.classList.contains('shooting')) return; // 防连点
@@ -824,6 +854,14 @@ if (shotBtn) {
       setTimeout(() => ipcRenderer.send('capture-window'), 60);
     }));
   });
+  // 右键 📷:进入框选截图模式(下一次在画布上拖框 = 只截那块)
+  shotBtn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (mode !== 'draw' || document.body.classList.contains('shooting')) return;
+    regionShotArm = true;
+    svg.style.cursor = 'crosshair';
+    showShotToast('框选要截图的区域(松手即截)');
+  });
 }
 ipcRenderer.on('capture-result', (e, res) => {
   restoreToolbar(res && res.ok ? '📷 已复制到剪贴板 · 已存到「图片\\Window Annotator」' : ('截图失败' + (res && res.error ? ':' + res.error : '')));
@@ -831,12 +869,19 @@ ipcRenderer.on('capture-result', (e, res) => {
 
 /* ---------- 放大镜:框一块 → 抓那一刻的放大快照 → 放一枚可拖的镜片 ---------- */
 // 和截图同款流程:先藏工具条/框选框(body.shooting),等隐藏真的上屏,再让主进程抓那块屏幕并放大回传。
+// 放大镜倍率:2× / 3× / 4× —— 放大镜工具选中时,鼠标中键循环切换(新建的放大镜用当前倍率)
+const LOUPE_ZOOMS = [2, 3, 4];
+let loupeZoom = 2;
+function cycleLoupeZoom() {
+  loupeZoom = LOUPE_ZOOMS[(LOUPE_ZOOMS.indexOf(loupeZoom) + 1) % LOUPE_ZOOMS.length];
+  showShotToast('放大镜倍率:' + loupeZoom + '×');
+}
 // 放大镜形状:'rect' | 'circle' —— 右键放大镜工具按钮切换,新建的放大镜用当前形状
 let loupeShape = 'rect';
 (function () {
   const btn = document.querySelector('[data-tool="loupe"]');
   if (!btn) return;
-  const upd = () => { btn.title = '放大镜(框一块放大 · 那一刻的快照)· 形状:' + (loupeShape === 'circle' ? '圆形' : '矩形') + '(右键切换)'; };
+  const upd = () => { btn.title = '放大镜(框一块放大)· 形状:' + (loupeShape === 'circle' ? '圆形' : '矩形') + '(右键切)· 中键切倍率(2/3/4×)'; };
   btn.addEventListener('contextmenu', (e) => {
     e.preventDefault(); e.stopPropagation();
     loupeShape = loupeShape === 'rect' ? 'circle' : 'rect';
@@ -856,7 +901,7 @@ ipcRenderer.on('loupe-result', (e, res) => {
   clearTimeout(loupeFailSafe);
   if (res && res.ok) {
     restoreToolbar('🔍 放大镜已放置 · 拖动可移位');
-    addItem({ id: nextId++, type: 'loupe', color, shape: loupeShape, x: res.region.x, y: res.region.y, w: res.region.w, h: res.region.h, img: res.dataURL });
+    addItem({ id: nextId++, type: 'loupe', color, shape: loupeShape, zoom: loupeZoom, x: res.region.x, y: res.region.y, w: res.region.w, h: res.region.h, img: res.dataURL });
   } else {
     restoreToolbar('放大镜失败' + (res && res.error ? ':' + res.error : ''));
   }

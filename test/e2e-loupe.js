@@ -71,6 +71,22 @@ app.whenReady().then(async () => {
   const moved = JSON.parse(await js('JSON.stringify(items[items.length-1])'));
   check('镜片可拖动(位置更新)', moved.x === 220 && moved.y === 170);
 
+  // —— 中键切放大倍率(放大镜工具下):2× → 3×,新镜片尺寸=源×倍率 ——
+  check('默认放大倍率 2×', (await js('loupeZoom')) === 2);
+  await js(`window.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:1})); true;`);
+  check('中键(放大镜工具下)-> 倍率 3×', (await js('loupeZoom')) === 3);
+  await js(`(function(){
+    const svg=document.getElementById('canvas');
+    svg.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:500,clientY:120,button:0,buttons:1}));
+    window.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:560,clientY:180,button:0,buttons:1}));
+    return true;})()`);
+  const regZ = JSON.parse(await js('JSON.stringify(drawing && drawing.region)'));
+  await js(`window.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,clientX:560,clientY:180,button:0})); true;`);
+  wc.send('loupe-result', { ok: true, region: regZ, dataURL: PNG1x1 });
+  await sleep(120);
+  check('新镜片 item.zoom=3', (await js('items[items.length-1].zoom')) === 3);
+  check('镜片尺寸=源×3(60×3=180px)', (await js('(function(){const ds=[...document.querySelectorAll(".loupe[data-id]")];return ds[ds.length-1].style.width;})()')) === '180px');
+
   // —— 形状:右键放大镜按钮切圆形,新镜片带 .circle ——
   await js(`document.querySelector('[data-tool="loupe"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})); true;`);
   check('右键放大镜按钮 -> 形状=圆形', (await js('loupeShape')) === 'circle');
@@ -95,6 +111,13 @@ app.whenReady().then(async () => {
     return true;})()`);
   await sleep(40);
   check('太小的框被忽略(不进 shooting)', !(await js('document.body.classList.contains("shooting")')));
+
+  // —— 优化:loupe 不进存档(大 dataURL 不撑爆 json/IPC),但会话内仍在 items 跟随窗口 ——
+  await js(`window.__saved=null; const ipc=require('electron').ipcRenderer; const _o=ipc.send.bind(ipc);
+    ipc.send=(ch,...a)=>{ if(ch==='annotations-changed')window.__saved=a[0]; return _o(ch,...a); }; save(); true;`);
+  await sleep(430);
+  check('存档 payload 不含 loupe(大快照不进 json)', await js('Array.isArray(window.__saved) && window.__saved.every(it=>it.type!=="loupe")'));
+  check('但 loupe 仍在 items(会话内跟随窗口)', await js('items.some(it=>it.type==="loupe")'));
 
   logf(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
   app.exit(fails === 0 ? 0 : 1);
