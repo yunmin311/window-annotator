@@ -40,6 +40,12 @@ app.whenReady().then(async () => {
   check('裁剪宽≈400*sf', Math.abs(crop.width - Math.round(400 * sf)) <= 2);
   check('裁剪高≈300*sf', Math.abs(crop.height - Math.round(300 * sf)) <= 2);
 
+  // 放大镜走的是"抓区域→toDataURL"(去掉了慢的主进程 resize);确认序列化够快,不会撞渲染端兜底超时
+  const t0 = Date.now();
+  const url = shot.toDataURL();
+  const dt = Date.now() - t0;
+  check('toDataURL 非空且快(<1500ms,实际 ' + dt + 'ms)', url.length > 100 && dt < 1500);
+
   clipboard.writeImage(shot);
   check('剪贴板已写入图片', !clipboard.readImage().isEmpty());
 

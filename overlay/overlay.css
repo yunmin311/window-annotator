@@ -12,6 +12,24 @@ body.draw #canvas [data-id]:hover { filter: drop-shadow(0 0 2px rgba(0,0,0,.45))
 
 /* 手写便签 */
 #notes { position: fixed; inset: 0; pointer-events: none; }
+
+/* 放大镜镜片:那一刻的快照放大,可拖动。圆角玻璃边+阴影,像悬在窗口上的一枚透镜 */
+.loupe {
+  position: absolute; pointer-events: none; border-radius: 14px; overflow: hidden;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  border: 2px solid rgba(255,255,255,.92);
+  box-shadow: 0 8px 26px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.loupe.circle { border-radius: 50%; }   /* 圆形放大镜(框非正方时为椭圆) */
+body.draw .loupe { pointer-events: auto; cursor: grab; }
+body.draw .loupe:active { cursor: grabbing; }
+/* 放大镜框选橡皮筋:拖的时候那个虚线选框(抓屏时随 body.shooting 藏掉,不进画面) */
+.loupe-band {
+  position: fixed; pointer-events: none; z-index: 4; border-radius: 5px;
+  border: 1.5px dashed rgba(255,255,255,.92); background: rgba(120,140,255,.14);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
+}
+body.shooting .loupe-band { display: none; }
 .note {
   position: absolute; pointer-events: none; max-width: 340px; min-width: 24px;
   font-family: 'Ink Free', 'Segoe Print', cursive;
@@ -192,3 +210,5 @@ body.shooting #ink-badge { visibility: hidden !important; }
 .swatch.active { border-color: #fff; }
 /* 吸管取到的自定义色块:取到色才出现;加一圈淡外描边,免得取到接近白/透明的浅色时在深底工具条上"隐身" */
 .swatch.custom { box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+/* 白色/浅色块:内描一圈暗线,在深色工具条上看得出边界(否则白块和条对比弱、像"没有块") */
+.swatch.light { box-shadow: inset 0 0 0 1px rgba(0,0,0,.22); }

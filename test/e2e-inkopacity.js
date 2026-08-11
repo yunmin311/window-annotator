@@ -55,9 +55,12 @@ app.whenReady().then(async () => {
   // 缩放模式下,滚轮不该动透明度(还是上一步的 1)
   check('缩放模式不影响透明度', (await op()) >= 0.99);
 
-  // 右键小图标 -> 切回透明度
-  await wc.executeJavaScript(`document.getElementById('wheel-mode').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})); true;`);
-  check('右键小图标 -> 切回透明度', (await jsNum('wheelMode')) === 'opacity');
+  // 右键小图标三态循环:当前 zoom -> tool -> opacity
+  const rclick = () => wc.executeJavaScript(`document.getElementById('wheel-mode').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})); true;`);
+  await rclick();
+  check('右键小图标 -> 切到"切工具"', (await jsNum('wheelMode')) === 'tool');
+  await rclick();
+  check('再右键 -> 三态循环回透明度', (await jsNum('wheelMode')) === 'opacity');
 
   // 切回查看模式 -> 透明度 + 缩放都复位
   wc.send('mode', 'view');

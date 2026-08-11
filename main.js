@@ -265,18 +265,28 @@ async function pickShotsDir() {
   settings.set('shotsDir', res.filePaths[0]);
   try { new Notification({ title: '✅ 截图保存位置已更新', body: res.filePaths[0] }).show(); } catch { /* 通知被关也没关系 */ }
 }
-async function captureWindow(o) {
-  const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 它的屏幕矩形就是截图范围(DIP)
+// 抓浮层本地 DIP 区域 region={x,y,w,h} 那块的屏幕像素(合成后,含已画标注=所见即所得)。
+// 整窗截图 / 框选区域截图 / 放大镜 共用同一套抓屏+裁剪(几何走 shot-geom,已单测)。
+async function captureRegion(o, region, thumbScale) {
+  const b = o.win.getBounds();
   const disp = screen.getDisplayMatching(b);
   const sf = disp.scaleFactor || 1;
+  // 抓屏分辨率倍率:抓全屏 thumbnail 是这里最慢的一步,分辨率越高越慢。截图用 sf(要清晰要存盘);
+  // 放大镜传 1(逻辑分辨率就够——它本来就放大、略糊无妨,却能省下高分屏 ×sf 的大半抓屏时间)。
+  const scale = thumbScale || sf;
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: { width: Math.round(disp.size.width * sf), height: Math.round(disp.size.height * sf) },
+    thumbnailSize: { width: Math.round(disp.size.width * scale), height: Math.round(disp.size.height * scale) },
   });
   const src = sources.find((s) => String(s.display_id) === String(disp.id)) || sources[0];
   if (!src || src.thumbnail.isEmpty()) throw new Error('拿不到屏幕画面(可能被系统禁止截屏)');
-  const crop = shotGeom.cropRect(b, disp.bounds, disp.size, src.thumbnail.getSize());
-  const shot = src.thumbnail.crop(crop);
+  const screenRect = { x: b.x + region.x, y: b.y + region.y, width: region.w, height: region.h };
+  const crop = shotGeom.cropRect(screenRect, disp.bounds, disp.size, src.thumbnail.getSize());
+  return src.thumbnail.crop(crop);
+}
+async function captureWindow(o) {
+  const b = o.win.getBounds();                       // 浮层正贴着目标窗口 -> 整块就是截图范围(DIP)
+  const shot = await captureRegion(o, { x: 0, y: 0, w: b.width, h: b.height });
   clipboard.writeImage(shot);
   const dir = shotsDir();
   fs.mkdirSync(dir, { recursive: true });
@@ -303,6 +313,23 @@ ipcMain.on('capture-window', async (e) => {
     } catch { /* 通知被系统关掉也没关系,浮层还有提示牌 */ }
   } catch (err) {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
+  } finally {
+    o.capturing = false;
+  }
+});
+
+// 放大镜:抓框选那块的快照,放大 2x,回给渲染端做成一枚可拖的镜片(静态=那一刻的样子,用户已认可)
+ipcMain.on('capture-loupe', async (e, region) => {
+  const o = overlayOf(e.sender);
+  if (!o) { if (!e.sender.isDestroyed()) e.sender.send('loupe-result', { ok: false, error: '找不到浮层' }); return; }
+  o.capturing = true;
+  try {
+    // 不在主进程放大(resize + 大图 toDataURL 慢,会超时→"没有响应");抓原区域直接回传,放大交给渲染端 CSS。
+    // 抓屏用 1× 逻辑分辨率(放大镜够用、快很多)。
+    const img = await captureRegion(o, region, 1);
+    if (!e.sender.isDestroyed()) e.sender.send('loupe-result', { ok: true, region, dataURL: img.toDataURL() });
+  } catch (err) {
+    if (!e.sender.isDestroyed()) e.sender.send('loupe-result', { ok: false, error: String((err && err.message) || err) });
   } finally {
     o.capturing = false;
   }
