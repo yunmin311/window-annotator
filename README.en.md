@@ -1,6 +1,8 @@
 <div align="center">
 
-# ✎ Window Annotator
+<img src="docs/logo.png" alt="Window Annotator logo" width="112">
+
+# Window Annotator
 
 **Hand-drawn annotations on any window — and they stick to the window.**
 

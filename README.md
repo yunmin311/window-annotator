@@ -1,6 +1,8 @@
 <div align="center">
 
-# ✎ Window Annotator
+<img src="docs/logo.png" alt="Window Annotator logo" width="112">
+
+# Window Annotator
 
 **给任意窗口贴手绘标注，标注跟着窗口走。**
 

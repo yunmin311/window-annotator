@@ -1,0 +1,51 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Window Annotator logo">
+  <defs>
+    <!-- Deep cool liquid-glass body -->
+    <linearGradient id="c2-glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2f3b"/>
+      <stop offset="0.55" stop-color="#1a1d26"/>
+      <stop offset="1" stop-color="#11131a"/>
+    </linearGradient>
+    <!-- Top sheen fading to transparent -->
+    <linearGradient id="c2-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Letter body: near-white with a cool tilt -->
+    <linearGradient id="c2-letter" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ced8e6"/>
+    </linearGradient>
+    <!-- Fluorescent cool ink -->
+    <linearGradient id="c2-ink" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.5" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="c2-inkglow" x="-30%" y="-80%" width="160%" height="260%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <g id="base">
+    <rect x="0" y="0" width="512" height="512" rx="116" fill="url(#c2-glass)"/>
+    <rect x="0" y="0" width="512" height="512" rx="116" fill="url(#c2-sheen)"/>
+    <rect x="1" y="1" width="510" height="510" rx="115" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="2"/>
+  </g>
+
+  <g id="letter">
+    <!-- Geometric A-frame (crossbar deliberately omitted; the ink stroke is the bar) -->
+    <path d="M244 120 L268 120 L386 402 L324 402 L256 210 L188 402 L126 402 Z" fill="url(#c2-letter)"/>
+  </g>
+
+  <g id="ink">
+    <!-- Hand-drawn fluorescent crossbar: slight wobble, round caps, soft glow -->
+    <path d="M148 309 C196 300 226 316 256 307 C288 297 322 313 366 297"
+          fill="none" stroke="url(#c2-ink)" stroke-width="22"
+          stroke-linecap="round" stroke-linejoin="round"
+          opacity="0.55" filter="url(#c2-inkglow)"/>
+    <path d="M148 309 C196 300 226 316 256 307 C288 297 322 313 366 297"
+          fill="none" stroke="url(#c2-ink)" stroke-width="22"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
