@@ -10,6 +10,18 @@ body.draw #canvas { cursor: crosshair; }
 body.draw #canvas [data-id] { pointer-events: stroke; }
 body.draw #canvas [data-id]:hover { filter: drop-shadow(0 0 2px rgba(0,0,0,.45)); }
 
+/* 橡皮擦圆形范围光标:一个跟随鼠标的圆圈,圈内碰到的标注都会被擦掉;滚轮改半径。
+   白圈 + 内外深描边,深色/浅色内容上都看得清;鼠标穿透不挡擦除。 */
+#eraser-ring {
+  position: fixed; border-radius: 50%; pointer-events: none; z-index: 9;
+  transform: translate(-50%, -50%); display: none;
+  border: 2px solid rgba(255,255,255,.9);
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,.45), inset 0 0 0 1.5px rgba(0,0,0,.45);
+  background: rgba(255,255,255,.06);
+}
+body.draw.tool-eraser #eraser-ring { display: block; }
+body.draw.tool-eraser #canvas { cursor: none; }   /* 用圆圈代替光标 */
+
 /* 手写便签 */
 #notes { position: fixed; inset: 0; pointer-events: none; }
 

@@ -457,6 +457,27 @@ function editNote(div, item) {
 
 /* ---------- 画布交互 ---------- */
 
+// 橡皮擦圆形范围:光标是个圆,圈内碰到的标注都擦掉;滚轮改半径。画笔模式标注坐标=本地,圆也=本地,直接比。
+let eraserRadius = 30;
+const eraserRing = document.getElementById('eraser-ring');
+function updateRing(x, y) {
+  if (!eraserRing) return;
+  eraserRing.style.left = x + 'px'; eraserRing.style.top = y + 'px';
+  eraserRing.style.width = (eraserRadius * 2) + 'px'; eraserRing.style.height = (eraserRadius * 2) + 'px';
+}
+// 圆(cx,cy,r)与矩形是否相交:圆心到矩形最近点距离 ≤ r
+function circleRectHit(cx, cy, r, rx, ry, rw, rh) {
+  const nx = Math.max(rx, Math.min(cx, rx + rw)), ny = Math.max(ry, Math.min(cy, ry + rh));
+  return (cx - nx) ** 2 + (cy - ny) ** 2 <= r * r;
+}
+// 擦掉圆范围内碰到的所有标注
+function eraseInCircle(cx, cy) {
+  for (const it of [...items]) {
+    const b = bboxOf(it);
+    if (b && circleRectHit(cx, cy, eraserRadius, b.x, b.y, b.w, b.h)) deleteItem(it.id);
+  }
+}
+
 let drawing = null; // 进行中的笔画
 
 svg.addEventListener('mousedown', (e) => {
@@ -475,8 +496,7 @@ svg.addEventListener('mousedown', (e) => {
     return;
   }
   if (tool === 'eraser') {
-    const t = e.target.closest('[data-id]');
-    if (t) deleteItem(t.dataset.id);
+    eraseInCircle(x, y);            // 落笔即擦掉圆范围内碰到的标注
     drawing = { type: 'eraser' };
     return;
   }
@@ -518,11 +538,7 @@ window.addEventListener('mousemove', (e) => {
   if (!drawing) return;
   const x = e.clientX, y = cy(e.clientY);
   if (drawing.type === 'eraser') {
-    if (e.buttons & 1) {
-      const t = document.elementFromPoint(e.clientX, e.clientY); // 命中检测要用屏幕坐标
-      const hit = t && t.closest && t.closest('[data-id]');
-      if (hit) deleteItem(hit.dataset.id);
-    }
+    if (e.buttons & 1) eraseInCircle(x, y);   // 按住划过:圆范围内碰到的都擦
     return;
   }
   if (drawing.type === 'ruler') {
@@ -662,7 +678,13 @@ if (wheelModeBtn) {
 window.addEventListener('wheel', (e) => {
   if (mode !== 'draw') return;
   e.preventDefault();
-  if (wheelMode === 'tool') {                      // 滚轮在工具间循环:下滚下一个、上滚上一个
+  if (tool === 'eraser') {                         // 橡皮擦工具:滚轮改圆的大小(优先于滚轮三态)
+    eraserRadius = Math.max(10, Math.min(120, eraserRadius + (e.deltaY > 0 ? -6 : 6)));
+    updateRing(e.clientX, e.clientY);
+    showInkBadge('橡皮 ' + (eraserRadius * 2) + 'px');
+    return;
+  }
+  if (wheelMode === 'tool') {                       // 滚轮在工具间循环:下滚下一个、上滚上一个
     const i = TOOLS.indexOf(tool);
     selectTool(TOOLS[(i + (e.deltaY > 0 ? 1 : TOOLS.length - 1)) % TOOLS.length]);
     return;
@@ -677,6 +699,10 @@ window.addEventListener('mousedown', (e) => {
   e.preventDefault();
   if (tool === 'loupe') cycleLoupeZoom();
   else cycleWheelMode();
+});
+// 橡皮擦圆光标跟随鼠标(不按也跟,让你看清擦除范围)
+window.addEventListener('mousemove', (e) => {
+  if (mode === 'draw' && tool === 'eraser') updateRing(e.clientX, e.clientY);
 });
 
 /* ---------- 工具条 ---------- */
@@ -734,6 +760,7 @@ function selectTool(name) {
   toolbar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
   svg.style.cursor = CURSORS[name] || 'crosshair';
   document.body.classList.toggle('tool-note', name === 'note');
+  document.body.classList.toggle('tool-eraser', name === 'eraser'); // 橡皮擦:显示圆形范围光标
   placeInk(true); // 平滑滑到新工具
 }
 toolbar.querySelectorAll('[data-tool]').forEach((btn) => {
