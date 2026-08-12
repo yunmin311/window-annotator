@@ -59,9 +59,9 @@ body{width:100vw;height:100vh;overflow:hidden;position:relative;background:
 </style></head><body>
   <div id="bar">
     <span class="app">当前窗口</span><button style="opacity:.62">◧</button><span class="sep"></span>
-    <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button>⌫</button>
+    <button>✏️</button><button class="on">↗</button><button>▭</button><button>▆</button><button class="ink">Aa</button><button><svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21"/><path d="M22 21H8"/><path d="m5 11 9 9"/></svg></button><button>📐</button><button><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="m21 21-4.6-4.6"/><path d="M10.5 7.5v6M7.5 10.5h6"/></svg></button>
     <span class="sep"></span>
-    <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i>
+    <i style="background:#3d3d40"></i><i style="background:#e5484d" class="on"></i><i style="background:#ee9d2b"></i><i style="background:#2f9e63"></i><i style="background:#0e8fd8"></i><i style="background:#8e4ec6"></i><i style="background:#ffffff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.22)"></i>
     <button title="取色"><svg viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4Z"/></svg></button>
     <span class="sep"></span>
     <button><svg viewBox="0 0 24 24"><path d="M4 9a2 2 0 0 1 2-2h1.6l.9-1.5A1 1 0 0 1 9.4 5h5.2a1 1 0 0 1 .9.5L16.4 7H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h9a5 5 0 0 1 0 10h-1"/></svg></button><button><svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V5.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/><path d="M6.7 7l.8 11.4a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3L18 7"/></svg></button><b>完成</b>
