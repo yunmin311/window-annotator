@@ -20,6 +20,10 @@ let scrollFollow = settings.get('scrollFollow', true);
 // 别每帧都读——这是"运行有点卡"的主要来源。位置对齐(applyBounds)不受此限,仍每帧跟手。
 const UIA_MIN_MS = 32;
 
+// 系统通知统一带上我们的 logo(不然开发模式下用的是 electron 默认图标)。配合 app.setAppUserModelId 用。
+const NOTIF_ICON = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
+function notify(opts) { return new Notification(Object.assign({ icon: NOTIF_ICON }, opts)); }
+
 // key = 目标窗口 hwnd 字符串 -> { win, overlayHwnd, target, storeKey, drawMode, visible, lastBounds }
 const overlays = new Map();
 
@@ -263,7 +267,7 @@ async function pickShotsDir() {
   });
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return;
   settings.set('shotsDir', res.filePaths[0]);
-  try { new Notification({ title: '✅ 截图保存位置已更新', body: res.filePaths[0] }).show(); } catch { /* 通知被关也没关系 */ }
+  try { notify({ title: '✅ 截图保存位置已更新', body: res.filePaths[0] }).show(); } catch { /* 通知被关也没关系 */ }
 }
 // 抓浮层本地 DIP 区域 region={x,y,w,h} 那块的屏幕像素(合成后,含已画标注=所见即所得)。
 // 整窗截图 / 框选区域截图 / 放大镜 共用同一套抓屏+裁剪(几何走 shot-geom,已单测)。
@@ -311,7 +315,7 @@ ipcMain.on('capture-window', async (e) => {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
     // 系统通知:明确告诉"成功了 + 存哪了",点一下直接在资源管理器里定位到这张图(治"找不到保存位置")
     try {
-      const n = new Notification({ title: '📷 已截图 · 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
+      const n = notify({ title: '📷 已截图 · 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
       n.on('click', () => shell.showItemInFolder(file));
       n.show();
     } catch { /* 通知被系统关掉也没关系,浮层还有提示牌 */ }
@@ -332,7 +336,7 @@ ipcMain.on('capture-region', async (e, region) => {
     const file = saveShotImage(shot);
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
     try {
-      const n = new Notification({ title: '📷 已截图(框选区域)· 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
+      const n = notify({ title: '📷 已截图(框选区域)· 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
       n.on('click', () => shell.showItemInFolder(file));
       n.show();
     } catch { /* 通知被关也没关系,浮层还有提示牌 */ }
@@ -470,7 +474,7 @@ if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
   app.quit(); // 单实例:已有一个在跑就退。测试(WA_TEST=1)放行,便于开着正式版时也能跑集成测试
 } else {
   app.on('second-instance', () => {
-    new Notification({ title: 'Window Annotator 已经在运行', body: '看右下角托盘的 ✎ 红色圆点,无需重复启动' }).show();
+    notify({ title: 'Window Annotator 已经在运行', body: '看右下角托盘的 ✎ 红色圆点,无需重复启动' }).show();
   });
 
   app.whenReady().then(() => {
@@ -486,7 +490,7 @@ if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
     if (!annotateKey) body = '标注快捷键注册失败:备用组合也全被其他软件占用了';
     else if (annotateKey !== 'Control+Alt+A') body = `Ctrl+Alt+A 被其他软件占用(常见是 QQ 截图),已改用 ${annotateKey.replace(/Control/g, 'Ctrl')}`;
     else body = '把标注贴到当前窗口:Ctrl+Alt+A;退出:Ctrl+Alt+Q';
-    new Notification({ title: 'Window Annotator 正在后台运行', body }).show();
+    notify({ title: 'Window Annotator 正在后台运行', body }).show();
 
     // 不在启动时拉起 UIA 读取器(那会立刻扫前台窗口、拖慢开机);等真有标注浮层再按需启动,见 syncReader
     console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'} 跟随滚动=${scrollFollow ? 'UIA(按需)' : '关'}`);
