@@ -10,6 +10,7 @@ const settings = require('./src/settings');
 const scrollUia = require('./src/scroll-uia');
 const regions = require('./src/regions');
 const trayPos = require('./src/tray-pos');
+const trayMenuWindow = require('./src/tray-menu-window');
 const shotGeom = require('./src/shot-geom');
 
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
@@ -383,7 +384,10 @@ function setAutoStart(on) {
 let tray = null;
 let trayKeys = { annotateKey: null, quitKey: null };
 let menuWin = null;        // 自绘的托盘右键菜单(透明置顶小窗,深色玻璃,自适应内容)
-let pendingCursor = null;  // 右键那一刻的光标屏幕坐标,等菜单量完尺寸再据此定位
+let menuBlurGuard = null;  // 托盘点击会切系统焦点:保护刚打开的菜单,别被同一次点击触发的 blur 关掉
+let menuPresenter = null;  // 启动时缓存菜单尺寸;点击时直接显示,不再等 renderer IPC 往返
+let menuStateSignature = null; // renderer 已收到的状态;变更时等新帧就绪再显示,避免闪出旧内容
+let menuSurface = null;    // 原生透明窗只预热一次;开关菜单仅切透明度,避免 Windows 合成器重建闪帧
 
 const fmtKey = (k) => (k ? k.replace(/Control/g, 'Ctrl') : '—');
 
@@ -410,18 +414,55 @@ function buildTrayMenu() {
   ]);
 }
 
+function trayMenuState() {
+  return {
+    autostart: isAutoStart(), follow: scrollFollow,
+    annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
+    shotsName: path.basename(shotsDir()),
+  };
+}
+
+function presentTrayMenu(w, size, cur) {
+  if (w.isDestroyed()) return;
+  const wa = screen.getDisplayNearestPoint(cur).workArea;
+  const { x, y } = trayPos.menuPosition(cur, size, wa);
+  if (menuSurface) menuSurface.open({ x, y, width: size.winW, height: size.winH });
+}
+
 // 自绘菜单窗口:透明、无边框、置顶、跳过任务栏;开机就建好(藏着),右键时填状态再弹,避免首弹卡顿
 function createTrayMenuWindow() {
   const w = new BrowserWindow({
-    width: 320, height: 340, show: false, frame: false, transparent: true,
-    resizable: false, movable: false, minimizable: false, maximizable: false,
-    skipTaskbar: true, hasShadow: false, fullscreenable: false, type: 'toolbar',
+    ...trayMenuWindow.trayMenuWindowOptions(),
     webPreferences: { nodeIntegration: true, contextIsolation: false },
+  });
+  menuSurface = trayMenuWindow.createWarmMenuSurface({ win: w });
+  menuPresenter = trayMenuWindow.createMenuPresenter({
+    present: (size, cur) => presentTrayMenu(w, size, cur),
+  });
+  menuBlurGuard = trayMenuWindow.createMenuBlurGuard({
+    hide: () => {
+      if (menuPresenter) menuPresenter.closeRequested();
+      if (!w.isDestroyed() && menuSurface) menuSurface.close();
+    },
   });
   w.setAlwaysOnTop(true, 'screen-saver');
   w.setMenu(null);
   w.loadFile(path.join(__dirname, 'tray-menu', 'menu.html'));
-  w.on('blur', () => { if (!w.isDestroyed() && w.isVisible()) w.hide(); }); // 点别处即收
+  w.webContents.on('did-finish-load', () => {
+    if (w.isDestroyed()) return;
+    if (menuSurface) menuSurface.warm();
+    const state = trayMenuState();
+    menuStateSignature = JSON.stringify(state);
+    w.webContents.send('menu-state', state);
+  });
+  w.on('blur', () => menuBlurGuard && menuBlurGuard.blurRequested());
+  w.on('closed', () => {
+    if (menuBlurGuard) menuBlurGuard.dispose();
+    menuBlurGuard = null;
+    menuPresenter = null;
+    menuStateSignature = null;
+    menuSurface = null;
+  });
   return w;
 }
 
@@ -431,26 +472,29 @@ function showTrayMenu() {
     try { tray.popUpContextMenu(buildTrayMenu()); } catch { /* 兜底也失败就算了 */ }
     return;
   }
-  pendingCursor = screen.getCursorScreenPoint();
-  menuWin.webContents.send('menu-state', {
-    autostart: isAutoStart(), follow: scrollFollow,
-    annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
-    shotsName: path.basename(shotsDir()),   // 只给文件夹名(短),让菜单能显示"现在存哪"而不撑宽
-  });
+  if (menuBlurGuard) menuBlurGuard.openRequested();
+  const state = trayMenuState();
+  const signature = JSON.stringify(state);
+  const stateChanged = signature !== menuStateSignature;
+  if (menuPresenter) {
+    menuPresenter.openRequested(screen.getCursorScreenPoint(), { deferUntilFreshSize: stateChanged });
+  }
+  if (stateChanged) {
+    menuStateSignature = signature;
+    menuWin.webContents.send('menu-state', state);
+  }
 }
 
 ipcMain.on('menu-size', (e, size) => {
   if (!menuWin || e.sender !== menuWin.webContents) return;
-  const cur = pendingCursor || screen.getCursorScreenPoint();
-  const wa = screen.getDisplayNearestPoint(cur).workArea;
-  const { x, y } = trayPos.menuPosition(cur, size, wa);
-  menuWin.setBounds({ x, y, width: size.winW, height: size.winH });
-  menuWin.show();
-  menuWin.focus();          // 拿到焦点才能靠 blur 收起
+  if (menuPresenter) menuPresenter.sizeReported(size);
 });
 
 ipcMain.on('tray-action', (e, action) => {
-  if (menuWin && e.sender === menuWin.webContents && menuWin.isVisible()) menuWin.hide();
+  if (menuWin && e.sender === menuWin.webContents) {
+    if (menuPresenter) menuPresenter.closeRequested();
+    if (menuSurface) menuSurface.close();
+  }
   if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
   else if (action === 'set-shots-dir') pickShotsDir();

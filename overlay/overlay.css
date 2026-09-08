@@ -126,6 +126,7 @@ body.view #ink-badge { display: none; }        /* 查看模式不调透明度,�
 
 /* 截图那一下:把工具条/描边/提示牌全部硬藏(别进画面),抓完由 restoreToolbar 重播液态弹入复原 */
 body.shooting #toolbar,
+body.shooting #more-panel,
 body.shooting #frame,
 body.shooting #chip,
 body.shooting #bind-badge,
@@ -157,6 +158,58 @@ body.shooting #ink-badge { visibility: hidden !important; }
   opacity: 0; visibility: hidden; pointer-events: none;
   transform: translateX(-50%) scaleX(.62) scaleY(.8);
 }
+#more-toggle { display: none !important; }
+#more-panel {
+  position: fixed; top: 52px; left: 50%; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+  width: min(360px, calc(100vw - 16px)); padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.13); border-radius: 14px;
+  background: linear-gradient(180deg, rgba(46,46,52,.96), rgba(20,20,24,.98));
+  box-shadow: 0 10px 28px rgba(0,0,0,.38), inset 0 1px .5px rgba(255,255,255,.38);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform: translateX(-50%) translateY(-5px) scale(.98);
+  transition: opacity .14s ease, transform .16s cubic-bezier(.22,1,.36,1), visibility 0s linear .16s;
+}
+#more-panel.open {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scale(1);
+  transition-delay: 0s;
+}
+#more-panel button {
+  border: none; background: transparent; color: rgba(255,255,255,.85);
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  font-size: 15px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+}
+#more-panel button:hover, #more-panel button.active { background: rgba(255,255,255,.14); }
+#more-panel button svg.ic { width: 17px; height: 17px; display: block; pointer-events: none;
+  fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+#more-panel #colors { display: inline-flex; align-items: center; }
+
+body[data-toolbar-tier="medium"] #toolbar {
+  gap: 1px; padding-left: 6px; padding-right: 6px;
+}
+body[data-toolbar-tier="medium"] #app-name { display: none; }
+body[data-toolbar-tier="medium"] #toolbar .sep { margin-left: 1px; margin-right: 1px; }
+body[data-toolbar-tier="medium"] #toolbar button { width: 27px; height: 27px; }
+body[data-toolbar-tier="medium"] #colors { gap: 3px; padding-left: 1px; padding-right: 1px; }
+body[data-toolbar-tier="medium"] .swatch { width: 14px; height: 14px; }
+body[data-toolbar-tier="medium"] #done { padding-left: 9px; padding-right: 9px; }
+
+body[data-toolbar-tier="narrow"] #toolbar,
+body[data-toolbar-tier="tiny"] #toolbar { gap: 1px; padding-left: 5px; padding-right: 5px; }
+body[data-toolbar-tier="narrow"] #app-name,
+body[data-toolbar-tier="tiny"] #app-name,
+body[data-toolbar-tier="narrow"] #toolbar .sep,
+body[data-toolbar-tier="tiny"] #toolbar .sep { display: none; }
+body[data-toolbar-tier="narrow"] #toolbar button { width: 27px; height: 27px; }
+body[data-toolbar-tier="narrow"] #more-toggle,
+body[data-toolbar-tier="tiny"] #more-toggle { display: inline-flex !important; }
+body[data-toolbar-tier="narrow"] #done { padding-left: 8px; padding-right: 8px; }
+
+body[data-toolbar-tier="tiny"] #toolbar { padding-left: 3px; padding-right: 3px; }
+body[data-toolbar-tier="tiny"] #toolbar button { width: 25px; height: 25px; font-size: 14px; }
+body[data-toolbar-tier="tiny"] #toolbar button svg.ic { width: 15px; height: 15px; }
+body[data-toolbar-tier="tiny"] #done { padding-left: 6px; padding-right: 6px; font-size: 12px !important; }
 /* 登场:胶囊「弹开」—— 从一颗短胶囊突然展开,横向拉伸过冲、再回弹一两下(液态"咚咚/弹弹")。
    全程只用 transform(scaleX/scaleY),不动布局:tool-ink 用的 offset 布局值恒定,不会再错位成白椭圆。
    缓动 easeOutQuint:开头很快(突然展开)、后段很缓(慢慢把弹性收住)。 */

@@ -18,6 +18,8 @@ const notesLayer = document.getElementById('notes');
 const toolbar = document.getElementById('toolbar');
 const toolInk = document.getElementById('tool-ink');
 const bindBadge = document.getElementById('bind-badge');
+const moreToggle = document.getElementById('more-toggle');
+const morePanel = document.getElementById('more-panel');
 
 let mode = 'view';        // view | draw
 let tool = 'pen';         // pen | arrow | rect | hl | note | eraser
@@ -711,12 +713,15 @@ const CURSORS = { note: 'text', eraser: 'cell' };
 
 // 把滑动高亮胶囊移到当前工具按钮下方。animate=false 时先关过渡瞬间到位(工具条刚出现,别从角落滑进来)
 function placeInk(animate) {
-  const btn = toolbar.querySelector('[data-tool].active');
-  if (!btn || !btn.offsetParent) return; // 工具条没显示时 offsetParent 为空,不测量
+  const btn = document.querySelector('[data-tool].active');
+  const inMore = !!(btn && btn.closest('#more-panel'));
+  if (moreToggle) moreToggle.classList.toggle('active', inMore);
+  if (!btn || !btn.offsetParent || inMore) { toolInk.style.opacity = '0'; return; }
   if (!animate) toolInk.style.transition = 'none';
-  toolInk.style.width = btn.offsetWidth + 'px';
-  toolInk.style.height = btn.offsetHeight + 'px';
-  toolInk.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+  const br = btn.getBoundingClientRect(), tr = toolbar.getBoundingClientRect();
+  toolInk.style.width = br.width + 'px';
+  toolInk.style.height = br.height + 'px';
+  toolInk.style.transform = `translate(${br.left - tr.left}px, ${br.top - tr.top}px)`;
   toolInk.style.opacity = '1';
   if (!animate) { void toolInk.offsetWidth; toolInk.style.transition = ''; } // 强制回流后恢复过渡
 }
@@ -732,6 +737,7 @@ function showToolbar() {
 }
 function hideToolbar() {
   if (!toolbar.classList.contains('shown')) return; // 本来就没显示,不用退场
+  closeMorePanel();
   toolbar.classList.remove('shown');
   toolbar.classList.add('hiding');    // 播收拢淡出
   // 退场动画放完就摘掉 .hiding,让工具条回落到"无 class 的隐藏基态"(opacity:0 + visibility:hidden +
@@ -757,7 +763,7 @@ function placeInkAfterPop() {
 function selectTool(name) {
   tool = name;
   if (name !== 'note') clearNoteSelection();
-  toolbar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
   svg.style.cursor = CURSORS[name] || 'crosshair';
   document.body.classList.toggle('tool-note', name === 'note');
   document.body.classList.toggle('tool-eraser', name === 'eraser'); // 橡皮擦:显示圆形范围光标
@@ -916,6 +922,68 @@ let loupeShape = 'rect';
   });
   upd();
 })();
+
+/* ---------- 窄窗口分级收缩 ---------- */
+
+const compactNodes = [
+  document.querySelector('[data-tool="ruler"]'),
+  document.querySelector('[data-tool="loupe"]'),
+  colorsBox,
+  eyedropperBtn,
+  shotBtn,
+  document.getElementById('clear'),
+].filter(Boolean);
+const compactHomes = compactNodes.map((node) => {
+  const anchor = document.createComment('compact-home:' + (node.id || node.dataset.tool || node.tagName));
+  node.parentNode.insertBefore(anchor, node);
+  return { node, anchor };
+});
+
+function closeMorePanel() {
+  if (!morePanel || !moreToggle) return;
+  morePanel.classList.remove('open');
+  morePanel.setAttribute('aria-hidden', 'true');
+  moreToggle.setAttribute('aria-expanded', 'false');
+}
+
+function moveCompactNodes(intoPanel) {
+  if (!morePanel) return;
+  if (intoPanel) {
+    compactHomes.forEach(({ node }) => morePanel.appendChild(node));
+  } else {
+    compactHomes.forEach(({ node, anchor }) => anchor.parentNode.insertBefore(node, anchor.nextSibling));
+  }
+}
+
+function applyToolbarTier() {
+  const width = window.innerWidth;
+  const tier = width >= 720 ? 'wide' : width >= 520 ? 'medium' : width >= 340 ? 'narrow' : 'tiny';
+  const compact = tier === 'narrow' || tier === 'tiny';
+  document.body.dataset.toolbarTier = tier;
+  moveCompactNodes(compact);
+  if (!compact) closeMorePanel();
+  requestAnimationFrame(() => placeInk(false));
+}
+
+if (moreToggle && morePanel) {
+  moreToggle.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = !morePanel.classList.contains('open');
+    morePanel.classList.toggle('open', open);
+    morePanel.setAttribute('aria-hidden', String(!open));
+    moreToggle.setAttribute('aria-expanded', String(open));
+  });
+  morePanel.addEventListener('click', (event) => {
+    if (event.target.closest('button, .swatch')) closeMorePanel();
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!morePanel.classList.contains('open')) return;
+    if (!event.target.closest('#more-panel, #more-toggle')) closeMorePanel();
+  });
+}
+window.addEventListener('resize', applyToolbarTier);
+applyToolbarTier();
+
 let loupeFailSafe = null;
 function requestLoupe(region) {
   if (mode !== 'draw' || document.body.classList.contains('shooting')) return;
