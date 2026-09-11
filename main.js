@@ -373,12 +373,14 @@ function registerHotkey(candidates, fn) {
   return null;
 }
 
-// 开机自启:交给系统的登录项(注册表 Run 键),自己不用记状态
+// 开机自启:交给系统的登录项(注册表 Run 键),自己不用记状态。
+// 读回时必须传和写入相同的 path/args(注册表按 名称+路径+参数 匹配),默认读会因参数对不上永远返回 false
+const AUTOSTART_ARGS = [path.resolve(__dirname)];
 function isAutoStart() {
-  try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
+  try { return app.getLoginItemSettings({ path: process.execPath, args: AUTOSTART_ARGS }).openAtLogin; } catch { return false; }
 }
 function setAutoStart(on) {
-  app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: [path.resolve(__dirname)] });
+  app.setLoginItemSettings({ openAtLogin: on, path: process.execPath, args: AUTOSTART_ARGS });
 }
 
 let tray = null;
