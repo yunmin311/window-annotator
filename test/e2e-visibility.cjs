@@ -1,7 +1,7 @@
 // Real Electron windows and main loop; only Windows OS / persistent user data boundaries are replaced.
 'use strict';
 process.env.WA_TEST = '1';
-const { app, BrowserWindow, screen, net, dialog, shell } = require('electron');
+const { app, BrowserWindow, screen, net, dialog, shell, Tray } = require('electron');
 // Native Windows DPI conversion is outside this Linux integration test.
 app.whenReady().then(() => {
   if (process.platform !== 'win32') screen.screenToDipRect = (_win, rect) => rect;
@@ -28,6 +28,9 @@ stub('../src/win32', {
 stub('../src/scroll-uia', { start() {}, stop() {}, getRegions: () => [] });
 stub('../src/store', { load: () => [], save() {} });
 stub('../src/settings', { get: (key,dflt) => dflt, set() {} });
+let tray;
+const trayOn = Tray.prototype.on;
+Tray.prototype.on = function (...args) { tray = this; return trayOn.apply(this,args); };
 const main = require('../main');
 setTimeout(() => { console.error('TIMEOUT'); app.exit(2); }, 30000);
 app.whenReady().then(async () => {
@@ -80,6 +83,8 @@ app.whenReady().then(async () => {
     const originalRequest = net.request.bind(net);
     net.request = options => originalRequest({...options, url:`http://127.0.0.1:${server.address().port}`});
     net.fetch = (_url, options) => originalFetch(`http://127.0.0.1:${server.address().port}`, options);
+    const stallServer = http.createServer(() => {});
+    await new Promise(resolve => stallServer.listen(0,'127.0.0.1',resolve));
     const dialogs = [], opened = [];
     dialog.showMessageBox = async options => { dialogs.push(options); await sleep(50); return { response:0 }; };
     shell.openExternal = async url => { opened.push(url); };
@@ -91,7 +96,15 @@ app.whenReady().then(async () => {
       assert.equal(dialogs.length, count); await sleep(80);
     };
     try {
-      await clickUpdate(); await clickUpdate(); await waitDialogs(1);
+      const opacityChanges = [];
+      const setOpacity = menu.setOpacity.bind(menu);
+      menu.setOpacity = value => { opacityChanges.push(value); return setOpacity(value); };
+      tray.emit('click'); await sleep(80);
+      assert.equal(opacityChanges.at(-1),1,'menu was opened');
+      opacityChanges.length = 0;
+      await clickUpdate(); await sleep(5);
+      assert.ok(!opacityChanges.includes(0),'checking updates must not hide the tray menu');
+      await clickUpdate(); await waitDialogs(1);
       assert.equal(requests, 1, 'rapid clicks share one update request');
       assert.match(dialogs[0].message, /0.3.0/);
       assert.equal(opened[0], 'https://github.com/yunmin311/window-annotator/releases/tag/v0.3.0');
@@ -104,7 +117,20 @@ app.whenReady().then(async () => {
       await clickUpdate(); await waitDialogs(3);
       assert.match(dialogs[2].message, /没有更新/);
       assert.equal(opened.length, 2, 'current version does not open a download');
-    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+      const workingFetch = net.fetch, workingRequest = net.request;
+      net.fetch = () => new Promise(() => {});
+      net.request = options => originalRequest({...options,url:`http://127.0.0.1:${stallServer.address().port}`});
+      await clickUpdate(); await sleep(30);
+      assert.match(main.trayMenuState().updateLabel,/正在检查/);
+      for (let i=0;i<230 && dialogs.length<4;i++) await sleep(100);
+      assert.equal(dialogs.length,4,'stalled requests finish within the overall deadline');
+      assert.match(main.trayMenuState().updateLabel,/检查失败/);
+      assert.match(dialogs[3].detail,/超时/);
+      await sleep(80);
+      net.fetch = workingFetch; net.request = workingRequest;
+      await clickUpdate(); await waitDialogs(5);
+      assert.match(dialogs[4].message,/没有更新/,'retry succeeds after a stalled check');
+    } finally { stallServer.closeAllConnections(); stallServer.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     console.log('ALL PASS - tray update checks: available, coalescing, rate limit, release fallback, current');
     console.log('ALL PASS - hide, stay hidden, restore modes, retain ink, resume annotation, shortcut state');
     BrowserWindow.getAllWindows().forEach(w => w.destroy()); app.exit(0);

@@ -533,7 +533,7 @@ ipcMain.on('menu-size', (e, size) => {
 });
 
 ipcMain.on('tray-action', (e, action) => {
-  if (menuWin && e.sender === menuWin.webContents) {
+  if (action !== 'check-updates' && menuWin && e.sender === menuWin.webContents) {
     if (menuPresenter) menuPresenter.closeRequested();
     if (menuSurface) menuSurface.close();
   }
@@ -577,7 +577,7 @@ async function checkUpdates(manual = false) {
     refreshTrayState();
   }
   const pending = updatePromise;
-  const result = await pending;
+  const result = await pending.catch(err => ({ status: 'error', error: String(err.message || err) }));
   if (updatePromise === pending) {
     updatePromise = null; updateResult = result; refreshTrayState();
     if (!manual && result.status === 'available') {

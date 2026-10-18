@@ -68,3 +68,25 @@ test('API rate limit falls back to official latest release redirect', async () =
     tag='v0.3.0'; fallbackStatus=503; assert.equal((await check()).status,'error');
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)); }
 });
+
+// A network implementation may ignore AbortSignal, including during body cleanup.
+test('stalled fetch, body and cancellation all have a hard deadline', async () => {
+  const pending = () => new Promise(() => {});
+  for (const phase of ['fetch', 'body', 'cancel']) {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls++;
+      if (phase === 'fetch' || calls > 1) return pending();
+      return {ok:true, status:200, body:{getReader:() => ({
+        read:phase === 'body' ? pending : async () => ({done:true}),
+        cancel:pending,
+      })}};
+    };
+    const result = await Promise.race([
+      updates.checkForUpdate({currentVersion:'0.2.1',fetchImpl,timeoutMs:30}),
+      new Promise(resolve => setTimeout(() => resolve({status:'stuck'}),250)),
+    ]);
+    assert.equal(result.status,'error', `${phase} must finish even if abort is ignored`);
+    assert.equal(calls,2, 'a stalled API must still try the release page');
+  }
+});
