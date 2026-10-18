@@ -86,52 +86,52 @@ app.whenReady().then(async () => {
     const stallServer = http.createServer(() => {});
     await new Promise(resolve => stallServer.listen(0,'127.0.0.1',resolve));
     const dialogs = [], opened = [];
-    dialog.showMessageBox = async options => { dialogs.push(options); await sleep(50); return { response:0 }; };
+    // A native modal may never settle when hidden behind a screen-saver-level menu.
+    // Updates must remain usable even in that case; do not stub it as immediately closed.
+    dialog.showMessageBox = options => { dialogs.push(options); return new Promise(() => {}); };
     shell.openExternal = async url => { opened.push(url); };
     const menu = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('tray-menu/menu.html'));
     if (menu.webContents.isLoading()) await new Promise(resolve => menu.webContents.once('did-finish-load', resolve));
-    const clickUpdate = () => menu.webContents.executeJavaScript(`document.querySelector('[data-action="check-updates"]').click()`);
-    const waitDialogs = async count => {
-      for (let i=0;i<100 && dialogs.length<count;i++) await sleep(20);
-      assert.equal(dialogs.length, count); await sleep(80);
+    const click = action => menu.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').click()`);
+    const waitLabel = async pattern => {
+      for (let i=0;i<230 && !pattern.test(main.trayMenuState().updateLabel);i++) await sleep(100);
+      assert.match(main.trayMenuState().updateLabel,pattern);
+      await sleep(40);
+      assert.match(await menu.webContents.executeJavaScript("document.getElementById('tx-update').textContent"),pattern);
     };
     try {
-      const opacityChanges = [];
-      const setOpacity = menu.setOpacity.bind(menu);
+      const opacityChanges = [], setOpacity = menu.setOpacity.bind(menu);
       menu.setOpacity = value => { opacityChanges.push(value); return setOpacity(value); };
-      tray.emit('click'); await sleep(80);
-      assert.equal(opacityChanges.at(-1),1,'menu was opened');
-      opacityChanges.length = 0;
-      await clickUpdate(); await sleep(5);
-      assert.ok(!opacityChanges.includes(0),'checking updates must not hide the tray menu');
-      await clickUpdate(); await waitDialogs(1);
-      assert.equal(requests, 1, 'rapid clicks share one update request');
-      assert.match(dialogs[0].message, /0.3.0/);
-      assert.equal(opened[0], 'https://github.com/yunmin311/window-annotator/releases/tag/v0.3.0');
+      tray.emit('click'); await sleep(80); opacityChanges.length = 0;
+      await click('check-updates'); await click('check-updates');
+      await waitLabel(/0.3.0/);
+      assert.equal(requests,1,'rapid clicks share one request');
+      assert.equal(dialogs.length,0,'checking must never open a blocking native dialog');
+      assert.ok(!opacityChanges.includes(0),'results stay inside the open menu');
+      await click('open-release'); await sleep(50);
+      assert.equal(opened.at(-1),'https://github.com/yunmin311/window-annotator/releases/tag/v0.3.0');
       responseStatus=403;
-      await clickUpdate(); await waitDialogs(2);
-      assert.match(dialogs[1].message, /无法检查/);
-      assert.match(dialogs[1].detail, /访问次数限制/);
-      assert.equal(opened[1], 'https://github.com/yunmin311/window-annotator/releases');
+      tray.emit('click'); await click('check-updates'); await waitLabel(/检查失败/);
+      assert.match(main.trayMenuState().updateDetail,/访问次数限制/);
+      assert.equal(dialogs.length,0,'errors do not block retries with a modal');
       responseStatus=200; releaseTag='v0.2.0';
-      await clickUpdate(); await waitDialogs(3);
-      assert.match(dialogs[2].message, /没有更新/);
-      assert.equal(opened.length, 2, 'current version does not open a download');
+      await click('check-updates'); await waitLabel(/没有更新/);
       const workingFetch = net.fetch, workingRequest = net.request;
       net.fetch = () => new Promise(() => {});
       net.request = options => originalRequest({...options,url:`http://127.0.0.1:${stallServer.address().port}`});
-      await clickUpdate(); await sleep(30);
+      await click('check-updates'); await sleep(30);
       assert.match(main.trayMenuState().updateLabel,/正在检查/);
-      for (let i=0;i<230 && dialogs.length<4;i++) await sleep(100);
-      assert.equal(dialogs.length,4,'stalled requests finish within the overall deadline');
-      assert.match(main.trayMenuState().updateLabel,/检查失败/);
-      assert.match(dialogs[3].detail,/超时/);
-      await sleep(80);
+      await waitLabel(/检查失败/);
+      assert.match(main.trayMenuState().updateDetail,/超时/);
       net.fetch = workingFetch; net.request = workingRequest;
-      await clickUpdate(); await waitDialogs(5);
-      assert.match(dialogs[4].message,/没有更新/,'retry succeeds after a stalled check');
+      await click('check-updates'); await waitLabel(/没有更新/);
+      assert.equal(dialogs.length,0,'repeated checks never use native modals');
+      shell.openExternal = async () => { throw new Error('fixture: browser unavailable'); };
+      await click('open-release'); await waitLabel(/检查失败/);
+      assert.match(main.trayMenuState().updateDetail,/浏览器/);
+      await click('check-updates'); await waitLabel(/没有更新/);
     } finally { stallServer.closeAllConnections(); stallServer.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-    console.log('ALL PASS - tray update checks: available, coalescing, rate limit, release fallback, current');
+    console.log('ALL PASS - inline results, no modal dialogs, coalescing, failure/retry, timeout/recovery, browser failure');
     console.log('ALL PASS - hide, stay hidden, restore modes, retain ink, resume annotation, shortcut state');
     BrowserWindow.getAllWindows().forEach(w => w.destroy()); app.exit(0);
   } catch(e) { console.error(e); app.exit(1); }

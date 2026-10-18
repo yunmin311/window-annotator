@@ -18,7 +18,6 @@ const APP_VERSION = require('./package.json').version;
 let annotationsHidden = false;
 let updateResult = null;
 let updatePromise = null;
-let updateDialogOpen = false;
 
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
 // 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
@@ -451,6 +450,7 @@ function buildTrayMenu() {
     { type: 'separator' },
     { label: `当前版本 ${APP_VERSION}`, enabled: false },
     { label: updateLabel(), click: () => checkUpdates(true) },
+    { label: '打开官方发布页…', click: openRelease },
     { label: '退出', click: () => app.quit() },
   ]);
 }
@@ -459,6 +459,7 @@ function trayMenuState() {
   return {
     autostart: isAutoStart(), follow: scrollFollow, hidden: annotationsHidden,
     visibilityKey: fmtKey(trayKeys.visibilityKey), version: APP_VERSION, updateLabel: updateLabel(),
+    updateDetail: updateResult && updateResult.status === 'error' ? updateResult.error : '',
     annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
     shotsName: path.basename(shotsDir()),
   };
@@ -539,6 +540,7 @@ ipcMain.on('tray-action', (e, action) => {
   }
   if (action === 'visibility') toggleVisibility();
   else if (action === 'check-updates') checkUpdates(true);
+  else if (action === 'open-release') openRelease();
   else if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
   else if (action === 'set-shots-dir') pickShotsDir();
@@ -562,6 +564,7 @@ function updateLabel() {
   if (updatePromise) return '正在检查更新…';
   if (updateResult && updateResult.status === 'available') return `发现新版本 ${updateResult.version}…`;
   if (updateResult && updateResult.status === 'error') return '检查失败，点击重试…';
+  if (updateResult && updateResult.status === 'current') return '没有更新，点击重新检查';
   return '检查更新…';
 }
 function refreshTrayState() {
@@ -582,24 +585,21 @@ async function checkUpdates(manual = false) {
     updatePromise = null; updateResult = result; refreshTrayState();
     if (!manual && result.status === 'available') {
       const n = notify({ title: `发现 Window Annotator ${result.version}`, body: '点击通知或打开托盘菜单查看更新' });
-      n.on('click', () => checkUpdates(true)); n.show();
+      n.on('click', () => { showTrayMenu(); checkUpdates(true); }); n.show();
     }
   }
-  if (!manual || updateDialogOpen) return result;
-  updateDialogOpen = true;
+  // Keep results inside the menu: native dialogs can steal focus from the
+  // always-on-top toolbar and leave an invisible modal blocking future input.
+  return result;
+}
+async function openRelease() {
   try {
-    const available = result.status === 'available';
-    const canOpenPage = available || result.status === 'error';
-    const response = await dialog.showMessageBox({ type: result.status === 'error' ? 'warning' : 'info',
-      title: 'Window Annotator 更新',
-      message: available ? `发现新版本 ${result.version}` : result.status === 'error' ? '暂时无法检查更新' : '当前没有更新的正式版本',
-      detail: available ? `当前版本 ${APP_VERSION}。将打开官方发布页查看下载与安装说明；本次不会覆盖你的标注存档。`
-        : result.status === 'error' ? result.error : `当前版本 ${APP_VERSION}。`,
-      buttons: canOpenPage ? ['打开发布页', '稍后'] : ['确定'], defaultId: 0, cancelId: canOpenPage ? 1 : 0,
-    });
-    if (canOpenPage && response.response === 0) await shell.openExternal(available ? result.url : updates.RELEASES);
-    return result;
-  } finally { updateDialogOpen = false; }
+    const url = updateResult && updateResult.status === 'available' ? updateResult.url : updates.RELEASES;
+    await shell.openExternal(url);
+  } catch (err) {
+    updateResult = { status: 'error', error: `无法打开浏览器，请重试：${String(err.message || err)}` };
+    refreshTrayState();
+  }
 }
 
 if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
