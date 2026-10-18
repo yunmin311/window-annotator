@@ -104,6 +104,8 @@ system tray, plus a notification telling you which hotkey is active. To launch i
 | Make marks follow scrolling | Nothing to do — just scroll the page in view mode |
 | Toggle scroll-follow on/off | Tray right-click → "跟随页面滚动" (Follow page scrolling) checkbox |
 | Start on boot | Tray right-click → "开机自动启动" (Start on login) |
+| Hide / restore toolbar and all annotations | `Ctrl+Alt+H`; press again to restore. Falls back to `Ctrl+Shift+Alt+H` if occupied; the tray shows the active shortcut. |
+| Check for updates | Tray → "检查更新…". Also checks 15 seconds after launch and every 12 hours; a newer release offers its official GitHub page. Source files are not overwritten automatically. |
 | Quit the app | `Ctrl+Alt+Q`, or tray right-click → "退出" (Quit) |
 
 ## ❓ FAQ

@@ -23,7 +23,7 @@ app.whenReady().then(async () => {
   await w.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'));
   const wc = w.webContents;
   const jsNum = (expr) => wc.executeJavaScript(expr);
-  const wheelN = (dy, n) => wc.executeJavaScript(`for(let i=0;i<${n};i++)window.dispatchEvent(new WheelEvent('wheel',{deltaY:${dy},cancelable:true})); true;`);
+  const wheelN = (dy, n) => wc.executeJavaScript(`for(let i=0;i<${n};i++)document.querySelector('[data-id="1"]').dispatchEvent(new WheelEvent('wheel',{deltaY:${dy},bubbles:true,cancelable:true})); true;`);
 
   await wc.executeJavaScript(`addItem({id:1,type:'pen',color:'red',points:[[100,100],[150,130]]}); true;`);
   wc.send('mode', 'draw');
@@ -44,11 +44,12 @@ app.whenReady().then(async () => {
   // —— 切到缩放模式(点小图标)——
   await wc.executeJavaScript(`document.getElementById('wheel-mode').click(); true;`);
   check('点小图标 -> 切到缩放', (await jsNum('wheelMode')) === 'zoom');
-  const sc = () => jsNum('inkScale');
+  const sc = () => jsNum('items.find(it => it.id === 1).scale || 1');
   await wheelN(-120, 4); await sleep(60);
   const s1 = await sc();
   check('缩放模式上滚 = 放大 (scale=' + s1 + ')', s1 > 1.1);
-  check('缩放已施加到标注层', /scale\(/.test(await jsNum('document.getElementById("canvas").style.transform')));
+  check('缩放施加到单条标注', /scale\(/.test(await jsNum("document.querySelector('[data-id=\"1\"]').getAttribute('transform')")));
+  check('整层画布不缩放', !(await jsNum('document.getElementById("canvas").style.transform')));
   await wheelN(120, 30); await sleep(60);
   check('缩放模式一直下滚:封底 0.4 (' + (await sc()) + ')', (await sc()) <= 0.41 && (await sc()) >= 0.39);
 
@@ -62,11 +63,11 @@ app.whenReady().then(async () => {
   await rclick();
   check('再右键 -> 三态循环回透明度', (await jsNum('wheelMode')) === 'opacity');
 
-  // 切回查看模式 -> 透明度 + 缩放都复位
+  // 切回查看模式 -> 临时透明度复位,标注尺寸保留
   wc.send('mode', 'view');
   await sleep(150);
   check('切回查看:透明度复位 1', (await op()) >= 0.99);
-  check('切回查看:缩放复位 1', Math.abs((await sc()) - 1) < 0.001);
+  check('切回查看:保留单条标注大小', Math.abs((await sc()) - 0.4) < 0.001);
 
   logf(fails === 0 ? 'ALL PASS' : fails + ' FAILED');
   app.exit(fails === 0 ? 0 : 1);

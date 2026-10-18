@@ -1,6 +1,6 @@
 {
   "name": "window-annotator",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "给任意 Windows 窗口贴手绘标注,标注跟着窗口走",
   "main": "main.js",
   "scripts": {

@@ -1,7 +1,7 @@
 // Window Annotator — 给任意 Windows 窗口贴手绘标注,标注跟着窗口走
 // Ctrl+Alt+A: 给当前窗口开/关标注模式   Ctrl+Alt+Q: 退出程序
 'use strict';
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell, desktopCapturer, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, Notification, nativeImage, shell, desktopCapturer, clipboard, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const win32 = require('./src/win32');
@@ -12,6 +12,13 @@ const regions = require('./src/regions');
 const trayPos = require('./src/tray-pos');
 const trayMenuWindow = require('./src/tray-menu-window');
 const shotGeom = require('./src/shot-geom');
+const updates = require('./src/updates');
+const updateFetch = require('./src/update-fetch')(net);
+const APP_VERSION = require('./package.json').version;
+let annotationsHidden = false;
+let updateResult = null;
+let updatePromise = null;
+let updateDialogOpen = false;
 
 // 跟随页面滚动:走系统无障碍(UIA)读目标窗口真实滚动位置,标注绝对跟踪、不漂移。
 // 支持的软件(浏览器/PDF/多数笔记软件)能精确跟随;读不到的就退回"标注钉在窗口上"。
@@ -37,7 +44,7 @@ function storeKeyOf(info) {
 // 只在真有标注浮层、且跟随开着时才跑 UIA 读取器 —— 平时(没标注 / 刚开机)零 UIA 开销,不拖慢系统。
 // 之前开机就拉起读取器、立刻不停扫前台窗口那棵极大的无障碍树,是"启动很卡"的主因。start/stop 都幂等。
 function syncReader() {
-  if (scrollFollow && overlays.size > 0) scrollUia.start();
+  if (scrollFollow && !annotationsHidden && overlays.size > 0) scrollUia.start();
   else scrollUia.stop();
 }
 
@@ -95,9 +102,11 @@ function createOverlay(targetHwnd, info) {
       appName: info.exe.replace(/\.exe$/i, ''),
     });
     applyBounds(o, state.rect);
-    win.showInactive();
-    o.visible = true;
-    setDrawMode(o, true);
+    if (!annotationsHidden) {
+      win.showInactive();
+      o.visible = true;
+      setDrawMode(o, true);
+    }
   });
   win.on('closed', () => { overlays.delete(win32.hkey(targetHwnd)); syncReader(); });
   win.loadFile(path.join(__dirname, 'overlay', 'overlay.html'));
@@ -148,23 +157,45 @@ function setDrawMode(o, on) {
 
 // 快捷键:前台是已贴标注的窗口 -> 切换标注模式;是新窗口 -> 贴上并进入标注模式
 function toggleAnnotate() {
+  const wasHidden = annotationsHidden;
+  if (wasHidden) { annotationsHidden = false; syncReader(); }
   const fg = win32.getForegroundWindow();
   for (const o of overlays.values()) {
     if (win32.same(o.overlayHwnd, fg)) { setDrawMode(o, false); return; }
   }
   const key = win32.hkey(fg);
   const existing = overlays.get(key);
-  if (existing) { setDrawMode(existing, !existing.drawMode); return; }
+  if (existing) {
+    if (wasHidden) { tick(); setDrawMode(existing, true); existing.win.focus(); }
+    else setDrawMode(existing, !existing.drawMode);
+    return;
+  }
 
   const info = win32.getWindowInfo(fg);
   if (!info || !info.exe || info.exe.toLowerCase() === 'explorer.exe' && !info.title) return;
   createOverlay(fg, info);
 }
 
+// 隐藏不退出程序、不丢标注;恢复时仍只显示当前目标窗口所属的浮层。
+function toggleVisibility() {
+  annotationsHidden = !annotationsHidden;
+  if (annotationsHidden) {
+    const fg = win32.getForegroundWindow();
+    for (const o of overlays.values()) {
+      if (win32.same(fg, o.overlayHwnd)) win32.setForegroundWindow(o.target);
+      o.win.setIgnoreMouseEvents(true, { forward: true });
+      o.win.hide(); o.visible = false;
+    }
+  } else {
+    tick();
+  }
+  syncReader();
+}
+
 // 追踪循环:跟随移动/缩放,目标最小化或失去前台就藏起来;查看模式下按 UIA 真实滚动平移标注
 // 返回这一帧是否"有动静"(位置变了 / 滚动了),用来驱动自适应节奏
 function tick() {
-  if (!overlays.size) return false;
+  if (annotationsHidden || !overlays.size) return false;
   const fg = win32.getForegroundWindow();
   let busy = false;
   for (const [key, o] of overlays) {
@@ -183,7 +214,11 @@ function tick() {
       const r = state.rect;
       const pk = `${r.x},${r.y},${r.width},${r.height}`;
       if (pk !== o.lastPhys) { o.lastPhys = pk; applyBounds(o, r); busy = true; }
-      if (!o.visible) { o.win.showInactive(); o.visible = true; busy = true; }
+      if (!o.visible) {
+        o.win.showInactive(); o.visible = true; busy = true;
+        o.win.setIgnoreMouseEvents(!o.drawMode, o.drawMode ? undefined : { forward: true });
+        if (o.drawMode) o.win.focus();
+      }
       // 标题变了(多半切了标签页)就换这个窗口对应的那套标注(节流,别每帧查)
       if (Date.now() - o.lastTitleCheck > 400) { o.lastTitleCheck = Date.now(); checkTitle(o); }
       // 查看模式且目标在前台:算出所有可滚动区发给浮层(变了才发),并更新绑定状态牌。
@@ -219,7 +254,7 @@ function trackLoop() {
   const busy = tick();
   calmFrames = busy ? 0 : Math.min(calmFrames + 1, 9999);
   let delay;
-  if (!overlays.size) delay = 120;
+  if (annotationsHidden || !overlays.size) delay = 120;
   else if (calmFrames < 24) delay = 16;  // 刚有动静的一小段时间保持 60fps,拖动/滚动跟得紧
   else delay = 24;                        // 静止:一秒 ~40 次,足够第一时间发现窗口又动了
   trackTimer = setTimeout(trackLoop, delay);
@@ -384,7 +419,7 @@ function setAutoStart(on) {
 }
 
 let tray = null;
-let trayKeys = { annotateKey: null, quitKey: null };
+let trayKeys = { annotateKey: null, quitKey: null, visibilityKey: null };
 let menuWin = null;        // 自绘的托盘右键菜单(透明置顶小窗,深色玻璃,自适应内容)
 let menuBlurGuard = null;  // 托盘点击会切系统焦点:保护刚打开的菜单,别被同一次点击触发的 blur 关掉
 let menuPresenter = null;  // 启动时缓存菜单尺寸;点击时直接显示,不再等 renderer IPC 往返
@@ -395,11 +430,12 @@ const fmtKey = (k) => (k ? k.replace(/Control/g, 'Ctrl') : '—');
 
 // 原生菜单只作兜底(自绘菜单没就绪时用);平时走 showTrayMenu 的自绘版
 function buildTrayMenu() {
-  const { annotateKey, quitKey } = trayKeys;
+  const { annotateKey, quitKey, visibilityKey } = trayKeys;
   return Menu.buildFromTemplate([
     { label: `标注当前窗口:${annotateKey ? annotateKey.replace(/Control/g, 'Ctrl') : '全部组合被占用'}`, enabled: false },
     { label: `退出程序:${quitKey ? quitKey.replace(/Control/g, 'Ctrl') : '—'}`, enabled: false },
     { type: 'separator' },
+    { label: annotationsHidden ? '恢复工具栏和标注' : '隐藏工具栏和标注', accelerator: visibilityKey || undefined, click: toggleVisibility },
     { label: '开机自动启动', type: 'checkbox', checked: isAutoStart(),
       click: (mi) => { setAutoStart(mi.checked); } },
     { label: '跟随页面滚动', type: 'checkbox', checked: scrollFollow,
@@ -412,13 +448,17 @@ function buildTrayMenu() {
     { label: '设置截图保存位置…', click: () => pickShotsDir() },
     { label: '打开截图文件夹', click: () => { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); } },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
+    { type: 'separator' },
+    { label: `当前版本 ${APP_VERSION}`, enabled: false },
+    { label: updateLabel(), click: () => checkUpdates(true) },
     { label: '退出', click: () => app.quit() },
   ]);
 }
 
 function trayMenuState() {
   return {
-    autostart: isAutoStart(), follow: scrollFollow,
+    autostart: isAutoStart(), follow: scrollFollow, hidden: annotationsHidden,
+    visibilityKey: fmtKey(trayKeys.visibilityKey), version: APP_VERSION, updateLabel: updateLabel(),
     annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
     shotsName: path.basename(shotsDir()),
   };
@@ -497,7 +537,9 @@ ipcMain.on('tray-action', (e, action) => {
     if (menuPresenter) menuPresenter.closeRequested();
     if (menuSurface) menuSurface.close();
   }
-  if (action === 'autostart') setAutoStart(!isAutoStart());
+  if (action === 'visibility') toggleVisibility();
+  else if (action === 'check-updates') checkUpdates(true);
+  else if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
   else if (action === 'set-shots-dir') pickShotsDir();
   else if (action === 'open-shots') { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); }
@@ -506,14 +548,58 @@ ipcMain.on('tray-action', (e, action) => {
   // 'close'(按 Esc):已经 hide,别的什么都不做
 });
 
-function createTray(annotateKey, quitKey) {
-  trayKeys = { annotateKey, quitKey };
+function createTray(annotateKey, quitKey, visibilityKey) {
+  trayKeys = { annotateKey, quitKey, visibilityKey };
   const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon);
   tray.setToolTip(`Window Annotator — 标注:${annotateKey ? fmtKey(annotateKey) : '快捷键注册失败'}`);
   menuWin = createTrayMenuWindow();
   tray.on('right-click', showTrayMenu);
   tray.on('click', showTrayMenu);   // 左键也弹,没有别的主动作,省得找
+}
+
+function updateLabel() {
+  if (updatePromise) return '正在检查更新…';
+  if (updateResult && updateResult.status === 'available') return `发现新版本 ${updateResult.version}…`;
+  if (updateResult && updateResult.status === 'error') return '检查失败，点击重试…';
+  return '检查更新…';
+}
+function refreshTrayState() {
+  if (!menuWin || menuWin.isDestroyed()) return;
+  const state = trayMenuState();
+  menuStateSignature = JSON.stringify(state);
+  menuWin.webContents.send('menu-state', state);
+}
+async function checkUpdates(manual = false) {
+  // 同时点击/定时触发只发一个请求;自动检查不弹窗、不打断画笔。
+  if (!updatePromise) {
+    updatePromise = updates.checkForUpdate({ currentVersion: APP_VERSION, fetchImpl: updateFetch });
+    refreshTrayState();
+  }
+  const pending = updatePromise;
+  const result = await pending;
+  if (updatePromise === pending) {
+    updatePromise = null; updateResult = result; refreshTrayState();
+    if (!manual && result.status === 'available') {
+      const n = notify({ title: `发现 Window Annotator ${result.version}`, body: '点击通知或打开托盘菜单查看更新' });
+      n.on('click', () => checkUpdates(true)); n.show();
+    }
+  }
+  if (!manual || updateDialogOpen) return result;
+  updateDialogOpen = true;
+  try {
+    const available = result.status === 'available';
+    const canOpenPage = available || result.status === 'error';
+    const response = await dialog.showMessageBox({ type: result.status === 'error' ? 'warning' : 'info',
+      title: 'Window Annotator 更新',
+      message: available ? `发现新版本 ${result.version}` : result.status === 'error' ? '暂时无法检查更新' : '当前没有更新的正式版本',
+      detail: available ? `当前版本 ${APP_VERSION}。将打开官方发布页查看下载与安装说明；本次不会覆盖你的标注存档。`
+        : result.status === 'error' ? result.error : `当前版本 ${APP_VERSION}。`,
+      buttons: canOpenPage ? ['打开发布页', '稍后'] : ['确定'], defaultId: 0, cancelId: canOpenPage ? 1 : 0,
+    });
+    if (canOpenPage && response.response === 0) await shell.openExternal(available ? result.url : updates.RELEASES);
+    return result;
+  } finally { updateDialogOpen = false; }
 }
 
 if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
@@ -530,13 +616,19 @@ if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
     const annotateKey = registerHotkey(
       ['Control+Alt+A', 'Control+Alt+W', 'Control+Shift+Alt+A'], toggleAnnotate);
     const quitKey = registerHotkey(['Control+Alt+Q', 'Control+Shift+Alt+Q'], () => app.quit());
-    createTray(annotateKey, quitKey);
+    const visibilityKey = registerHotkey(['Control+Alt+H', 'Control+Shift+Alt+H'], toggleVisibility);
+    createTray(annotateKey, quitKey, visibilityKey);
 
     let body;
     if (!annotateKey) body = '标注快捷键注册失败:备用组合也全被其他软件占用了';
     else if (annotateKey !== 'Control+Alt+A') body = `Ctrl+Alt+A 被其他软件占用(常见是 QQ 截图),已改用 ${annotateKey.replace(/Control/g, 'Ctrl')}`;
     else body = '把标注贴到当前窗口:Ctrl+Alt+A;退出:Ctrl+Alt+Q';
-    notify({ title: 'Window Annotator 正在后台运行', body }).show();
+    body += visibilityKey ? `；隐藏/恢复:${fmtKey(visibilityKey)}` : '；隐藏快捷键被占用，可使用托盘菜单';
+    notify({ title: `Window Annotator ${APP_VERSION} 正在后台运行`, body }).show();
+    if (!process.env.WA_TEST) {
+      setTimeout(() => checkUpdates(false), 15000).unref();
+      setInterval(() => checkUpdates(false), 12 * 60 * 60 * 1000).unref();
+    }
 
     // 不在启动时拉起 UIA 读取器(那会立刻扫前台窗口、拖慢开机);等真有标注浮层再按需启动,见 syncReader
     console.log(`Window Annotator 已启动:标注=${annotateKey || '注册失败'} 退出=${quitKey || '注册失败'} 跟随滚动=${scrollFollow ? 'UIA(按需)' : '关'}`);
@@ -548,4 +640,4 @@ if (!process.env.WA_TEST && !app.requestSingleInstanceLock()) {
 app.on('will-quit', () => { globalShortcut.unregisterAll(); scrollUia.stop(); });
 app.on('window-all-closed', () => {}); // 没有覆盖层时也保持后台驻留
 
-module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays, checkTitle, shotsDir };
+module.exports = { createOverlay, setDrawMode, toggleAnnotate, overlays, checkTitle, shotsDir, toggleVisibility, trayMenuState };

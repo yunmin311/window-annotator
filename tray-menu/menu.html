@@ -68,12 +68,16 @@
     <div class="row info"><span class="ck"></span><span class="tx">标注当前窗口</span><span class="sc" id="sc-annotate">—</span></div>
     <div class="row info"><span class="ck"></span><span class="tx">退出程序</span><span class="sc" id="sc-quit">—</span></div>
     <div class="sep"></div>
+    <div class="row" data-action="visibility"><span class="ck"></span><span class="tx" id="tx-visibility">隐藏工具栏和标注</span><span class="sc" id="sc-visibility">—</span></div>
     <div class="row" id="row-autostart" data-action="autostart"><span class="ck">✓</span><span class="tx">开机自动启动</span></div>
     <div class="row" id="row-follow" data-action="follow"><span class="ck">✓</span><span class="tx">跟随页面滚动</span></div>
     <div class="sep"></div>
     <div class="row" data-action="set-shots-dir"><span class="ck"></span><span class="tx">截图保存位置…</span><span class="sc" id="sc-shots">—</span></div>
     <div class="row" data-action="open-shots"><span class="ck"></span><span class="tx">打开截图文件夹</span></div>
     <div class="row" data-action="open"><span class="ck"></span><span class="tx">打开标注存档文件夹</span></div>
+    <div class="sep"></div>
+    <div class="row info"><span class="ck"></span><span class="tx" id="tx-version">Window Annotator</span></div>
+    <div class="row" data-action="check-updates"><span class="ck"></span><span class="tx" id="tx-update">检查更新…</span></div>
     <div class="row quit" data-action="quit"><span class="ck"></span><span class="tx">退出</span></div>
   </div>
 
@@ -93,6 +97,10 @@
     document.getElementById('sc-annotate').textContent = s.annotateKey || '—';
     document.getElementById('sc-quit').textContent = s.quitKey || '—';
     document.getElementById('sc-shots').textContent = s.shotsName || '—';
+    document.getElementById('tx-visibility').textContent = s.hidden ? '恢复工具栏和标注' : '隐藏工具栏和标注';
+    document.getElementById('sc-visibility').textContent = s.visibilityKey || '—';
+    document.getElementById('tx-version').textContent = s.version ? '当前版本 ' + s.version : 'Window Annotator';
+    document.getElementById('tx-update').textContent = s.updateLabel || '检查更新…';
     setOn('row-autostart', s.autostart);
     setOn('row-follow', s.follow);
     // BrowserWindow 隐藏后 requestAnimationFrame 会暂停；同步测量才能保证托盘第二次点击仍可显示。

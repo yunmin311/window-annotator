@@ -79,7 +79,11 @@ function bboxOf(it) {
 function outsideRegion(it, dy, reg) {
   const b = bboxOf(it);
   if (!b) return false;
-  return geo.outside(b.x, b.y + dy, b.w, b.h, reg.rect);
+  const scale = Number.isFinite(it.scale) ? Math.max(0.4, Math.min(2.6, it.scale)) : 1;
+  const rad = it.type === 'note' ? (it.rot || 0) * Math.PI / 180 : 0;
+  const w = scale * (Math.abs(Math.cos(rad)) * b.w + Math.abs(Math.sin(rad)) * b.h);
+  const h = scale * (Math.abs(Math.sin(rad)) * b.w + Math.abs(Math.cos(rad)) * b.h);
+  return geo.outside(b.x + (b.w - w) / 2, b.y + dy + (b.h - h) / 2, w, h, reg.rect);
 }
 // 延迟绑定:画笔模式下浮层在前台、读不到目标滚动区,落笔当下没法定基准。回到查看、区读到了,就把还没
 // 绑定的标注按落笔点归到所在区,基准取该区当前位移(此刻目标滚动位置≈落笔时,不会错位)。也让存档重载后按
@@ -94,7 +98,22 @@ function bindPending() {
     if (r) it.roff0 = r.off;
   }
 }
-// 把每条标注按其所在区的位移平移到位:paths 各设 transform,便签设 translateY 叠加自身 rotate
+// 缩放属于单条标注,中心取它自己的包围盒;窗口坐标与鼠标坐标始终保持 1:1。
+function applyItemTransform(it, dy = dyOf(it)) {
+  const el = elCache.get(it.id);
+  if (!el) return;
+  const scale = Number.isFinite(it.scale) ? Math.max(0.4, Math.min(2.6, it.scale)) : 1;
+  if (it.type === 'note' || it.type === 'loupe') {
+    el.style.transformOrigin = 'center center';
+    el.style.transform = `translateY(${dy}px) rotate(${it.rot || 0}deg) scale(${scale})`;
+  } else {
+    if (scale === 1) { el.setAttribute('transform', `translate(0 ${dy})`); return; }
+    const b = bboxOf(it);
+    const cx = b ? b.x + b.w / 2 : 0, cy = b ? b.y + b.h / 2 : 0;
+    el.setAttribute('transform', `translate(0 ${dy}) translate(${cx} ${cy}) scale(${scale}) translate(${-cx} ${-cy})`);
+  }
+}
+// 每条标注的滚动位移与自身缩放组合,不再变换整张画布。
 function applyRegions() {
   bindPending();
   for (const it of items) {
@@ -102,9 +121,7 @@ function applyRegions() {
     if (!el) continue;
     const reg = regionFor(it);
     const dy = dyOf(it, reg);
-    if (it.type === 'note') el.style.transform = `translateY(${dy}px) rotate(${it.rot}deg)`;
-    else if (it.type === 'loupe') el.style.transform = `translateY(${dy}px)`;
-    else el.setAttribute('transform', `translate(0 ${dy})`);
+    applyItemTransform(it, dy);
     // 裁剪:标注跟随其区滚出该区范围就隐藏(否则会"越级"飘到浏览器标签栏等区外)。
     // 用 visibility 不用 display:none —— 后者会让包围盒归零,下一帧误判"在区内"又闪回来。
     el.style.visibility = (reg && outsideRegion(it, dy, reg)) ? 'hidden' : '';
@@ -298,7 +315,7 @@ function bindLoupe(div, item) {
     if (tool === 'eraser') { deleteItem(item.id); return; }
     const sx = e.clientX - item.x, sy = e.clientY - item.y;
     let moved = false;
-    const move = (ev) => { moved = true; item.x = ev.clientX - sx; item.y = ev.clientY - sy; div.style.left = item.x + 'px'; div.style.top = item.y + 'px'; };
+    const move = (ev) => { moved = true; item.x = ev.clientX - sx; item.y = ev.clientY - sy; div.style.left = item.x + 'px'; div.style.top = item.y + 'px'; bboxCache.delete(item.id); };
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); if (moved) save(); };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -314,6 +331,7 @@ function renderItem(item) {
   else { el = makePath(item); (item.type === 'hl' ? hlLayer : inkLayer).appendChild(el); }
   elCache.set(item.id, el);   // 缓存元素(单独 Map,不进 items)
   bboxCache.delete(item.id);  // 包围盒待用时惰性算一次
+  applyItemTransform(item);
 }
 
 function renderAll() {
@@ -362,6 +380,9 @@ function undo() {
   if (a.op === 'add') {
     const idx = items.findIndex((it) => it.id === a.id);
     if (idx !== -1) { items.splice(idx, 1); removeDom(a.id); }
+  } else if (a.op === 'scale') {
+    const it = items.find((it) => it.id === a.id);
+    if (it) { it.scale = a.before; applyItemTransform(it); }
   } else if (a.op === 'del') {
     items.splice(Math.min(a.idx, items.length), 0, a.item);
     renderItem(a.item);
@@ -396,6 +417,7 @@ function bindNote(div, item) {
       moved = true;
       item.x = ev.clientX - sx; item.y = ev.clientY - sy;
       div.style.left = item.x + 'px'; div.style.top = item.y + 'px';
+      bboxCache.delete(item.id); // 拖动后滚动区裁剪必须使用新位置
     };
     const up = () => {
       window.removeEventListener('mousemove', move);
@@ -414,6 +436,7 @@ function bindNote(div, item) {
   // 滚轮缩放字号(悬停便签滚动)
   div.addEventListener('wheel', (e) => {
     if (mode !== 'draw') return;
+    if (wheelMode === 'zoom' && !div.classList.contains('editing')) return; // 交给单条标注缩放
     e.preventDefault(); e.stopPropagation();
     const s = Math.max(10, Math.min(80, (item.size || 19) + (e.deltaY < 0 ? 2 : -2)));
     item.size = s; div.style.fontSize = s + 'px'; bboxCache.delete(item.id); // 字号变了,包围盒重算
@@ -459,7 +482,7 @@ function editNote(div, item) {
 
 /* ---------- 画布交互 ---------- */
 
-// 橡皮擦圆形范围:光标是个圆,圈内碰到的标注都擦掉;滚轮改半径。画笔模式标注坐标=本地,圆也=本地,直接比。
+// 橡皮擦圆形范围:光标和命中框都用显示坐标,圈内碰到的标注都擦掉;滚轮改半径。
 let eraserRadius = 30;
 const eraserRing = document.getElementById('eraser-ring');
 function updateRing(x, y) {
@@ -475,8 +498,11 @@ function circleRectHit(cx, cy, r, rx, ry, rw, rh) {
 // 擦掉圆范围内碰到的所有标注
 function eraseInCircle(cx, cy) {
   for (const it of [...items]) {
-    const b = bboxOf(it);
-    if (b && circleRectHit(cx, cy, eraserRadius, b.x, b.y, b.w, b.h)) deleteItem(it.id);
+    const el = elCache.get(it.id);
+    if (!el || el.style.visibility === 'hidden') continue;
+    // 鼠标/圆光标是屏幕上的窗口本地坐标,命中也用实际显示的框(含缩放、旋转、滚动)。
+    const b = el.getBoundingClientRect();
+    if (circleRectHit(cx, cy, eraserRadius, b.x, b.y, b.width, b.height)) deleteItem(it.id);
   }
 }
 
@@ -628,13 +654,12 @@ window.addEventListener('keydown', (e) => {
 
 // 画笔模式下,空白处滚鼠标滚轮有三个作用,可循环切换(默认透明度):
 //  · 透明度:上滚变淡看清下面窗口、下滚变实(参考 PixPin 的 Ctrl+滚轮)
-//  · 缩放  :放大 / 缩小整层标注(参考 PixPin 默认滚轮缩放贴图)
+//  · 缩放  :只放大 / 缩小鼠标指向的标注,围绕它自身中心;空白处不动作
 //  · 切工具:滚轮在六个工具间循环切换(配合数字键 1-6,免得频繁去够工具条)
-// 前两个只动标注层(笔迹 + 便签),工具条 / 描边不动;悬在便签上滚仍是改字号(那儿 stopPropagation,走不到这)。
+// 透明度作用于标注层;缩放作用于单条标注。便签在非缩放模式下滚轮仍改字号。
 // 切模式:点 / 右键 / 鼠标中键 —— 工具条左端那个小图标(◧透明度 / 🔍缩放 / ✎切工具)三态循环。
 const WHEEL_MODES = ['opacity', 'zoom', 'tool'];
 let inkOpacity = 1;
-let inkScale = 1;
 let wheelMode = 'opacity';            // 'opacity' | 'zoom' | 'tool'
 let inkBadgeTimer = null;
 const inkBadge = document.getElementById('ink-badge');
@@ -650,24 +675,20 @@ function showInkBadge(text) {
 function applyInk(showBadge) {
   svg.style.opacity = inkOpacity;
   notesLayer.style.opacity = inkOpacity;
-  svg.style.transformOrigin = notesLayer.style.transformOrigin = 'center';
-  svg.style.transform = notesLayer.style.transform = 'scale(' + inkScale + ')';
-  if (showBadge) showInkBadge(wheelMode === 'zoom'
-    ? '缩放 ' + Math.round(inkScale * 100) + '%'
-    : '标注 ' + Math.round(inkOpacity * 100) + '%');
+  if (showBadge) showInkBadge('标注 ' + Math.round(inkOpacity * 100) + '%');
 }
 function setWheelMode(m) {
   wheelMode = m;
   if (!wheelModeBtn) return;
   wheelModeBtn.textContent = m === 'zoom' ? '🔍' : m === 'tool' ? '✎' : '◧';
   wheelModeBtn.title =
-    (m === 'zoom' ? '滚轮 = 缩放标注' : m === 'tool' ? '滚轮 = 切换工具' : '滚轮 = 标注透明度')
+    (m === 'zoom' ? '滚轮 = 缩放鼠标指向的标注' : m === 'tool' ? '滚轮 = 切换工具' : '滚轮 = 标注透明度')
     + '(点击 / 中键 / 右键循环切换)';
 }
 // 循环切下一个滚轮模式,并短暂提示当前是哪个(点按钮 / 中键 / 右键都走这)
 function cycleWheelMode() {
   setWheelMode(WHEEL_MODES[(WHEEL_MODES.indexOf(wheelMode) + 1) % WHEEL_MODES.length]);
-  showInkBadge(wheelMode === 'zoom' ? '🔍 滚轮 = 缩放标注'
+  showInkBadge(wheelMode === 'zoom' ? '🔍 滚轮 = 缩放鼠标指向的标注'
     : wheelMode === 'tool' ? '✎ 滚轮 = 切换工具'
     : '◧ 滚轮 = 标注透明度');
 }
@@ -691,8 +712,22 @@ window.addEventListener('wheel', (e) => {
     selectTool(TOOLS[(i + (e.deltaY > 0 ? 1 : TOOLS.length - 1)) % TOOLS.length]);
     return;
   }
-  if (wheelMode === 'zoom') inkScale = Math.max(0.4, Math.min(2.6, inkScale + (e.deltaY > 0 ? -0.08 : 0.08)));
-  else inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
+  if (wheelMode === 'zoom') {
+    if (e.target.closest && e.target.closest('#toolbar, #more-panel, .editing')) return;
+    const target = e.target.closest && e.target.closest('[data-id]');
+    const it = target && items.find((it) => String(it.id) === target.dataset.id);
+    if (!it || !e.deltaY) return;
+    const before = Number.isFinite(it.scale) ? it.scale : 1;
+    const scale = Math.max(0.4, Math.min(2.6, before + (e.deltaY > 0 ? -0.08 : 0.08)));
+    if (scale === before) return;
+    undoStack.push({ op: 'scale', id: it.id, before });
+    it.scale = scale;
+    applyItemTransform(it);
+    showInkBadge('缩放 ' + Math.round(scale * 100) + '%');
+    save();
+    return;
+  }
+  inkOpacity = Math.max(0.12, Math.min(1, inkOpacity + (e.deltaY > 0 ? 0.08 : -0.08)));
   applyInk(true);
 }, { passive: false });
 // 鼠标中键:放大镜工具时切放大倍率,其它工具时循环切滚轮模式(preventDefault 挡掉中键自动滚动)
@@ -1015,7 +1050,7 @@ ipcRenderer.on('init', (e, data) => {
 ipcRenderer.on('mode', (e, m) => {
   mode = m;
   document.body.className = m + (items.length ? ' has-items' : '') + (tool === 'note' ? ' tool-note' : '');
-  inkOpacity = 1; inkScale = 1; applyInk(false); // 换模式复位:标注恢复不透明 + 原始大小
+  inkOpacity = 1; applyInk(false); // 透明度是临时查看效果;单条标注的大小保留在存档里
   if (m === 'view' && drawing) drawing = null;
   if (m === 'view') clearNoteSelection();
   if (m !== 'view') { clearTimeout(bindPendingTimer); clearTimeout(bindHideTimer); bindBadge.classList.remove('show'); }
