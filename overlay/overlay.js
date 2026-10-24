@@ -70,7 +70,10 @@ function bboxOf(it) {
   const el = elCache.get(it.id); if (!el) return null;
   let b;
   if (it.type === 'note' || it.type === 'loupe') b = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
-  else { try { const g = el.getBBox(); b = { x: g.x, y: g.y, w: g.width, h: g.height }; } catch { b = null; } }
+  else {
+    // 标尺按测量框取中心,避免下方读数的宽高改变缩放中心。
+    try { const g = (it.type === 'ruler' ? el.querySelector('rect') : el).getBBox(); b = { x: g.x, y: g.y, w: g.width, h: g.height }; } catch { b = null; }
+  }
   if (!b || (b.w === 0 && b.h === 0)) return null; // 还没排版好,先别缓存,下帧再试
   bboxCache.set(it.id, b);
   return b;
@@ -103,6 +106,7 @@ function applyItemTransform(it, dy = dyOf(it)) {
   const el = elCache.get(it.id);
   if (!el) return;
   const scale = Number.isFinite(it.scale) ? Math.max(0.4, Math.min(2.6, it.scale)) : 1;
+  if (it.type === 'ruler') updateRulerLabel(el, it);
   if (it.type === 'note' || it.type === 'loupe') {
     el.style.transformOrigin = 'center center';
     el.style.transform = `translateY(${dy}px) rotate(${it.rot || 0}deg) scale(${scale})`;
@@ -259,12 +263,13 @@ function makeNote(item) {
   return div;
 }
 
-// 测量标尺:拖一个框,实时显示 物理像素 宽×高(设计师量元素/间距用)。物理像素 = DIP × devicePixelRatio。
+// 测量标尺:物理像素读数 = 原始 DIP 尺寸 × 当前缩放 × devicePixelRatio;框本身保留原始几何,避免重复缩放。
 function rulerDims(item) {
   const [x1, y1] = item.from, [x2, y2] = item.to;
   const x = Math.min(x1, x2), y = Math.min(y1, y2), w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
   const dpr = window.devicePixelRatio || 1;
-  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, pw: Math.round(w * dpr), ph: Math.round(h * dpr) };
+  const scale = Number.isFinite(item.scale) ? Math.max(0.4, Math.min(2.6, item.scale)) : 1;
+  return { x, y, w, h, scale, cx: x + w / 2, cy: y + h / 2, pw: Math.round(w * scale * dpr), ph: Math.round(h * scale * dpr) };
 }
 function makeRuler(item) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -290,7 +295,16 @@ function updateRuler(g, item) {
   rect.setAttribute('x', d.x); rect.setAttribute('y', d.y);
   rect.setAttribute('width', d.w); rect.setAttribute('height', d.h);
   txt.setAttribute('x', d.x + d.w); txt.setAttribute('y', d.y + d.h + 12); // 标签移到框右下角外,不挡被量的内容
-  txt.textContent = d.pw + ' × ' + d.ph + ' px';
+  updateRulerLabel(g, item);
+}
+function updateRulerLabel(g, item) {
+  const d = rulerDims(item), txt = g.querySelector('text');
+  const label = d.pw + ' × ' + d.ph + ' px';
+  if (txt.textContent !== label) txt.textContent = label;
+  // 抵消父组在框右下角处的缩放:字号、描边和离框间距固定,位置仍跟随测量框。
+  const x = d.x + d.w, y = d.y + d.h;
+  const transform = `translate(${x} ${y}) scale(${1 / d.scale}) translate(${-x} ${-y})`;
+  if (txt.getAttribute('transform') !== transform) txt.setAttribute('transform', transform);
 }
 
 // 放大镜镜片:一枚 div,背景是那一刻抓到的放大快照(2x),可拖动。存 img(dataURL)跟随窗口。
@@ -698,6 +712,24 @@ if (wheelModeBtn) {
   wheelModeBtn.addEventListener('contextmenu', cyc);
   setWheelMode('opacity');
 }
+// 细笔迹只有几像素宽,不能要求鼠标准确压线;按实际显示范围留 10 DIP 容差。
+// 优先直接命中的标注,否则只选最近的一条;整层画布始终不参与缩放。
+function zoomItemAt(e) {
+  const target = e.target.closest && e.target.closest('[data-id]');
+  const direct = target && items.find((it) => String(it.id) === target.dataset.id);
+  if (direct) return direct;
+  let nearest = null, distance = Infinity;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i], el = elCache.get(it.id);
+    if (!el || el.style.visibility === 'hidden') continue;
+    const b = el.getBoundingClientRect();
+    const dx = Math.max(b.left - e.clientX, 0, e.clientX - b.right);
+    const dy = Math.max(b.top - e.clientY, 0, e.clientY - b.bottom);
+    const d = dx * dx + dy * dy;
+    if (d <= 100 && d < distance) { nearest = it; distance = d; }
+  }
+  return nearest;
+}
 window.addEventListener('wheel', (e) => {
   if (mode !== 'draw') return;
   e.preventDefault();
@@ -714,9 +746,9 @@ window.addEventListener('wheel', (e) => {
   }
   if (wheelMode === 'zoom') {
     if (e.target.closest && e.target.closest('#toolbar, #more-panel, .editing')) return;
-    const target = e.target.closest && e.target.closest('[data-id]');
-    const it = target && items.find((it) => String(it.id) === target.dataset.id);
-    if (!it || !e.deltaY) return;
+    if (!e.deltaY) return;
+    const it = zoomItemAt(e);
+    if (!it) { showInkBadge('请将鼠标移到要缩放的标注上或附近'); return; }
     const before = Number.isFinite(it.scale) ? it.scale : 1;
     const scale = Math.max(0.4, Math.min(2.6, before + (e.deltaY > 0 ? -0.08 : 0.08)));
     if (scale === before) return;

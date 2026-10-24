@@ -289,6 +289,45 @@ function shotsDir() {
   const custom = settings.get('shotsDir', '');
   return (custom && String(custom).trim()) ? custom : path.join(app.getPath('pictures'), 'Window Annotator');
 }
+// Windows 横幅超时后仍可能留在通知中心；保留对象直到点击/明确移除。
+// 限制历史条数，并同步移除最老的系统通知，避免留下点不动的旧通知。
+const shotNotifications = new Set();
+function showShotNotice(title, body, dir) {
+  const n = notify({ title, body });
+  shotNotifications.add(n);
+  const release = () => shotNotifications.delete(n);
+  n.once('failed', (_event, error) => { release(); console.warn('截图通知失败:', error); });
+  n.on('close', (_event, reason) => {
+    if (reason === 'userCanceled' || reason === 'applicationHidden') release();
+  });
+  n.once('click', () => {
+    if (dir) void openShotsFolder(dir);
+    release();
+  });
+  while (shotNotifications.size > 100) {
+    const oldest = shotNotifications.values().next().value;
+    try { oldest.close(); } catch { /* 系统可能已移除它 */ }
+    shotNotifications.delete(oldest);
+  }
+  try { n.show(); } catch (error) { release(); throw error; }
+}
+async function openShotsFolder(dir = shotsDir()) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    if (error) throw new Error(error);
+  } catch (error) {
+    console.warn('无法打开截图文件夹:', dir, error);
+    try { showShotNotice('无法打开截图文件夹', `${dir}\n${error.message || error}`); } catch { /* 通知禁用 */ }
+  }
+}
+function notifySavedShot(file, region = false) {
+  const dir = path.dirname(file);
+  try {
+    showShotNotice(region ? '📷 已截图(框选区域)· 已复制到剪贴板' : '📷 已截图 · 已复制到剪贴板',
+      `已保存到：${dir}\n点击打开此截图所在的文件夹`, dir);
+  } catch { /* 通知被系统关闭时，截图结果仍回传浮层 */ }
+}
 // 弹系统选文件夹对话框,选定后写进设置。托盘菜单和原生兜底菜单共用。
 async function pickShotsDir() {
   const cur = shotsDir();
@@ -302,7 +341,8 @@ async function pickShotsDir() {
   });
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return;
   settings.set('shotsDir', res.filePaths[0]);
-  try { notify({ title: '✅ 截图保存位置已更新', body: res.filePaths[0] }).show(); } catch { /* 通知被关也没关系 */ }
+  refreshTrayState();
+  try { showShotNotice('✅ 截图保存位置已更新', res.filePaths[0] + '\n点击打开文件夹', res.filePaths[0]); } catch { /* 通知被关也没关系 */ }
 }
 // 抓浮层本地 DIP 区域 region={x,y,w,h} 那块的屏幕像素(合成后,含已画标注=所见即所得)。
 // 整窗截图 / 框选区域截图 / 放大镜 共用同一套抓屏+裁剪(几何走 shot-geom,已单测)。
@@ -348,12 +388,7 @@ ipcMain.on('capture-window', async (e) => {
   try {
     const file = await captureWindow(o);
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
-    // 系统通知:明确告诉"成功了 + 存哪了",点一下直接在资源管理器里定位到这张图(治"找不到保存位置")
-    try {
-      const n = notify({ title: '📷 已截图 · 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
-      n.on('click', () => shell.showItemInFolder(file));
-      n.show();
-    } catch { /* 通知被系统关掉也没关系,浮层还有提示牌 */ }
+    notifySavedShot(file);
   } catch (err) {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
   } finally {
@@ -370,11 +405,7 @@ ipcMain.on('capture-region', async (e, region) => {
     const shot = await captureRegion(o, region);   // 默认 sf 高清(要存盘)
     const file = saveShotImage(shot);
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: true, file });
-    try {
-      const n = notify({ title: '📷 已截图(框选区域)· 已复制到剪贴板', body: '已保存到「图片\\Window Annotator」,点此打开' });
-      n.on('click', () => shell.showItemInFolder(file));
-      n.show();
-    } catch { /* 通知被关也没关系,浮层还有提示牌 */ }
+    notifySavedShot(file, true);
   } catch (err) {
     if (!e.sender.isDestroyed()) e.sender.send('capture-result', { ok: false, error: String((err && err.message) || err) });
   } finally {
@@ -445,7 +476,7 @@ function buildTrayMenu() {
       } },
     { type: 'separator' },
     { label: '设置截图保存位置…', click: () => pickShotsDir() },
-    { label: '打开截图文件夹', click: () => { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); } },
+    { label: '打开截图文件夹', click: () => openShotsFolder() },
     { label: '打开标注存档文件夹', click: () => shell.openPath(path.join(__dirname, 'data')) },
     { type: 'separator' },
     { label: `当前版本 ${APP_VERSION}`, enabled: false },
@@ -461,7 +492,7 @@ function trayMenuState() {
     visibilityKey: fmtKey(trayKeys.visibilityKey), version: APP_VERSION, updateLabel: updateLabel(),
     updateDetail: updateResult && updateResult.status === 'error' ? updateResult.error : '',
     annotateKey: fmtKey(trayKeys.annotateKey), quitKey: fmtKey(trayKeys.quitKey),
-    shotsName: path.basename(shotsDir()),
+    shotsName: path.basename(shotsDir()), shotsPath: shotsDir(),
   };
 }
 
@@ -544,7 +575,7 @@ ipcMain.on('tray-action', (e, action) => {
   else if (action === 'autostart') setAutoStart(!isAutoStart());
   else if (action === 'follow') { scrollFollow = !scrollFollow; settings.set('scrollFollow', scrollFollow); syncReader(); }
   else if (action === 'set-shots-dir') pickShotsDir();
-  else if (action === 'open-shots') { fs.mkdirSync(shotsDir(), { recursive: true }); shell.openPath(shotsDir()); }
+  else if (action === 'open-shots') void openShotsFolder();
   else if (action === 'open') shell.openPath(path.join(__dirname, 'data'));
   else if (action === 'quit') app.quit();
   // 'close'(按 Esc):已经 hide,别的什么都不做
